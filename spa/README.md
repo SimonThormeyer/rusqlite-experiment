@@ -16,7 +16,8 @@ The staged plan and upstream references are in the [project
 README](../README.md#incremental-plan).
 First comes a standalone storage probe, then a minimal SQLite integration; the
 SPA will be adapted only after those work. The [standalone probe](../jspi-probe/README.md)
-passed all checks in a Firefox 156.0 (aarch64) session; the SPA is unchanged.
+passed its storage checks in a Firefox 156.0 (aarch64) session. A new
+SQLite callback check also passed twice in browser tests; the SPA is unchanged.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,

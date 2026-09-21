@@ -11,7 +11,8 @@ callbacks to reach Promise-based storage operations without the worker message
 facade used in the earlier `sahpool` experiment.
 
 This is a staged investigation. A [standalone JSPI/OPFS probe](jspi-probe/README.md)
-now builds and passed all checks in a Firefox 156.0 (aarch64) session.
+passed its original storage checks in a Firefox 156.0 (aarch64) session.
+The SQLite `xOpen` suspension check also passed twice in browser tests.
 See the [recorded results](jspi-probe/README.md#browser-verification).
 The current code still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
 `multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
@@ -40,9 +41,11 @@ sync requirements. Whether this approach improves performance remains unmeasured
 
 ### Incremental plan
 
-Each stage should produce a reviewable result before moving to the next. This
-documentation and standalone feasibility stages are complete. Stages 3–6 remain
-future work; repeatability and other browsers have not yet been verified.
+Each stage should produce a reviewable result before moving to the next. The
+documentation and standalone storage feasibility stages are complete. Stage 3
+has a verified [callback probe](jspi-probe/README.md#sqlite-callback-check), including
+two successful runs. A persistent VFS and stages 4–6 remain future work. The
+original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB
    baseline and historical findings from the proposed JSPI experiment.

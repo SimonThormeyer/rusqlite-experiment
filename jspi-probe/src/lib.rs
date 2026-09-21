@@ -1,6 +1,8 @@
-//! A page-context JSPI/OPFS probe. No SQLite, worker, or shared mutable state.
+//! Page-context JSPI/OPFS and SQLite callback probes. No worker.
 // JSPI is experimental in the pinned wasm-bindgen release.
 #![allow(deprecated)]
+
+mod sqlite;
 
 use js_sys::{Promise, Uint8Array, futures::jspi_block_on_promise as suspend};
 use wasm_bindgen::prelude::*;

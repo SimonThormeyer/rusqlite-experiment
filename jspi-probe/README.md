@@ -1,8 +1,9 @@
 # JSPI + OPFS feasibility probe
 
 This standalone experiment exercises Promise-based OPFS from synchronous Rust
-functions on the browser's main page. It contains no SQLite or worker code and
-does not change the TODO application's IndexedDB backend.
+functions on the browser's main page. A second check exercises suspension through
+a SQLite VFS callback. Neither check uses a worker or changes the TODO
+application's IndexedDB backend.
 
 ## Run it
 
@@ -17,6 +18,10 @@ Open [localhost:8081](http://localhost:8081) in a JSPI-capable browser and click
 test data, reloads itself, verifies the data using a fresh WASM instance, then
 deletes the test file. Successful completion displays **PASS: all checks completed**.
 Run it again to check repeatability. Stop the server with Ctrl-C.
+
+For the next step, click **Run SQLite callback checks**. This check does not
+reload the page. Keep the tab foregrounded and expect **PASS: all SQLite callback
+checks completed**, then run it again to check cleanup and repeatability.
 
 Prerequisites: Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 `miniserve`. The first build may download the matching wasm-bindgen CLI.
@@ -58,13 +63,49 @@ dependencies stay unchanged. It pins wasm-bindgen **0.2.128** and js-sys/web-sys
 PATH should not be used directly. Release `wasm-opt` is disabled because the JSPI
 glue uses exception-handling instructions.
 
+The callback probe also pins rusqlite **0.38.0** and sqlite-wasm-rs **0.5.2**,
+without the SQLite3 Multiple Ciphers feature. Building embedded SQLite requires
+a C compiler capable of targeting WASM (as for the baseline).
+
 The release build succeeded with Rust **1.98.0**, wasm-pack **0.15.0**, and
 wasm-bindgen CLI **0.2.128**. Rust formatting, JavaScript syntax, and generated
-export names were checked. Browser verification passed as recorded below.
+export names were checked. Both probes passed browser verification as
+recorded below; the SQLite callback checks passed twice.
+
+## SQLite callback check
+
+The new probe registers `jspi-callback-probe`, an adapter over the existing
+`memvfs`, without modifying that VFS. Its `xOpen` callback suspends on a supplied
+Promise, reads and verifies a three-byte OPFS marker, then delegates the file open
+to `memvfs`. The path under test is:
+
+```text
+JS -> JSPI Rust export -> rusqlite -> SQLite C -> Rust xOpen
+   -> JSPI suspension / OPFS read -> resume xOpen -> SQLite -> rusqlite -> JS
+```
+
+After resumption, one unencrypted connection creates a table, inserts a value,
+rolls back an update, and queries the original value. It uses `journal_mode=MEMORY`.
+The callback count must be exactly one. A timer verifies event-loop progress
+during the controlled wait inside `xOpen`.
+
+The checks also attempt an overlapping invocation, a rejected Promise, and an
+OPFS read of a missing marker. Overlap is rejected before entering SQLite. Both
+callback failures return `SQLITE_CANTOPEN` to SQLite; the export verifies that
+rusqlite received that code and reports the original JS error as `cause`.
+A fresh successful invocation then checks recovery. No mutable state borrow is
+held across suspension. Connections close before VFS unregistration, and the
+memory database and OPFS marker are removed after use.
+
+**This is a callback-boundary experiment, not an OPFS database VFS.** Database
+bytes remain in memory. It does not establish suspension in page read/write
+callbacks, persistent transactions, cross-tab locking, or crash durability.
+The full VFS stage remains incomplete despite the successful callback checks.
 
 ## Browser verification
 
-All page checks passed on 2026-09-21 in **Firefox 156.0 (aarch64)**:
+All original storage checks passed on 2026-09-21 in **Firefox 156.0 (aarch64)**
+(before the SQLite check was added):
 
 ```text
 PASS: binary round trip, shorter overwrite, and empty file
@@ -76,9 +117,26 @@ PASS: deletion and missing-file storage errors
 PASS: storage operations recover after rejection; test file removed
 ```
 
-This completes the standalone feasibility step for that browser. Repeatability and other browsers remain unverified.
+This completes the standalone storage feasibility step for that browser. Repeatability of the original storage checks and other browsers remain unverified.
+
+### SQLite callback results
+
+The SQLite callback checks passed **twice**. Results:
+
+```text
+PASS: SQLite xOpen suspended and resumed with event-loop progress (13 ticks)
+PASS: overlapping SQLite probe rejected before entering SQLite
+PASS: OPFS marker read inside xOpen; SQL insert/query and rollback succeeded
+PASS: rejected Promise in xOpen mapped to SQLITE_CANTOPEN with original cause
+PASS: missing OPFS marker mapped to SQLITE_CANTOPEN with NotFoundError cause
+PASS: fresh connection and SQL operations succeeded after callback failures
+PASS: OPFS marker removed; SQLite database was memory-only
+```
+
+The narrow `xOpen` suspension boundary and repeatability check are verified.
+These results do not establish persistent SQLite storage in OPFS.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
-with binary data and error propagation. It does not validate SQLite callbacks,
-random-access VFS semantics, locking, crash durability, encryption, or database
-performance. Those belong to subsequent steps.
+with binary data and error propagation. Random-access VFS semantics, locking,
+crash durability, encryption, and database performance require subsequent work
+and verification.

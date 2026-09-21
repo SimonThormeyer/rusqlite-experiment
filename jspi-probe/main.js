@@ -1,6 +1,8 @@
 import init, { write, read, _delete as remove, wait_for } from './pkg/jspi_probe.js';
+import { runSqliteChecks } from './sqlite-checks.js';
 
 const button = document.querySelector('#run');
+const sqliteButton = document.querySelector('#sqlite');
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -24,10 +26,12 @@ function fail(error) {
   status.dataset.result = 'fail';
   report(error.stack ?? String(error));
   button.disabled = false;
+  sqliteButton.disabled = false;
 }
 
 async function start() {
   button.disabled = true;
+  sqliteButton.disabled = true;
   status.dataset.result = 'running';
   status.textContent = 'Checking storage and suspension…';
   lines = [];
@@ -76,9 +80,25 @@ async function finish(saved) {
   status.textContent = 'PASS: all checks completed';
   status.dataset.result = 'pass';
   button.disabled = false;
+  sqliteButton.disabled = false;
 }
 
 button.addEventListener('click', () => start().catch(fail));
+sqliteButton.addEventListener('click', async () => {
+  button.disabled = true;
+  sqliteButton.disabled = true;
+  lines = [];
+  log.textContent = '';
+  status.textContent = 'Checking the SQLite callback boundary…';
+  status.dataset.result = 'running';
+  try {
+    await runSqliteChecks(report);
+    status.textContent = 'PASS: all SQLite callback checks completed';
+    status.dataset.result = 'pass';
+    button.disabled = false;
+    sqliteButton.disabled = false;
+  } catch (error) { fail(error); }
+});
 try {
   assert(isSecureContext && navigator.storage?.getDirectory, 'OPFS requires HTTPS or localhost');
   assert(typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function',
@@ -90,5 +110,6 @@ try {
     status.textContent = 'Ready';
     status.dataset.result = 'ready';
     button.disabled = false;
+    sqliteButton.disabled = false;
   }
 } catch (error) { fail(error); }
