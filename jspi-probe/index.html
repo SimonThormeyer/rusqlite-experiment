@@ -40,6 +40,9 @@ changes, before COMMIT, then check that only the last committed data survives.</
 stream operations, and verify complete database versions after reacquiring ownership.
 A helper tab reloads between cases and closes at the end.</p>
 <button id="publication" disabled>Run publication recovery checks</button>
+<p>VFS contract check: open flags, offsets, short reads, size limits, lock state,
+and rejection of unsupported SQL settings. The committed fixture stays unchanged.</p>
+<button id="contract" disabled>Run VFS contract checks</button>
 <p><a href="./final-recovery.html">Finish recovery: actual quota and process-crash checks</a></p>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>

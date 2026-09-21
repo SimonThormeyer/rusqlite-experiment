@@ -35,7 +35,12 @@ by two successful writable regression runs. Actual quota exhaustion and all
 seven process-termination checks passed twice.
 The [final recovery batch](../jspi-probe/FINAL-RECOVERY.md) is complete within its
 experimental scope; the decision retains the bounded whole-file design without
-a power-loss durability claim. The VFS contract audit and SPA integration follow.
+a power-loss durability claim. SPA integration follows the completed VFS contract audit.
+The [contract audit](../jspi-probe/VFS-CONTRACT.md) now defines the supported
+single-file policy and fixes callback gaps; contract checks passed twice.
+Writable and cross-tab regressions for those changes also each passed twice,
+completing the audit's browser acceptance checks.
+The SPA has not yet adopted those changes.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,

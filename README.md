@@ -33,6 +33,10 @@ Real-quota exhaustion and each of seven process-termination boundaries passed
 twice, completing the combined stage within its
 experimental scope. We retain the bounded whole-file design. See the
 [complete procedure and recovery decision](jspi-probe/FINAL-RECOVERY.md).
+The [writable VFS contract audit](jspi-probe/VFS-CONTRACT.md) has identified and
+fixed offset conversion, open-policy, and lock-state gaps. The contract checks
+passed twice, as did writable and cross-tab regressions for these changes.
+The audit is complete within the documented experimental contract.
 
 ### Proposed architecture
 
@@ -74,7 +78,8 @@ transaction before COMMIT or any VFS write also passed twice. Interruption with
 buffered VFS writes and staged publication now passed twice in the combined suite.
 Actual quota exhaustion and seven process-termination checks each passed twice.
 The bounded recovery decision is
-recorded; the supported-VFS-contract audit and stages 4–6 remain future work. The
+recorded; the VFS contract checks and writable/cross-tab regressions each passed
+twice, completing the contract audit. Stages 4–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB
@@ -120,7 +125,8 @@ The recovery decision retains the bounded experimental whole-file design;
 production crash durability and an associated persistent recovery protocol
 remain outside that claim. Simulated failures and document teardown do not
 establish power-loss durability.
-Then come the supported-VFS-contract audit, SPA integration, encryption checks,
+The supported-VFS-contract audit is complete. Next come SPA integration,
+encryption checks,
 and browser/performance evaluation described above.
 
 wasm-bindgen's JSPI support is experimental. Use a JSPI-capable browser and HTTPS

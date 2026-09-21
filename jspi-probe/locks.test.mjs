@@ -28,7 +28,7 @@ test('lease can be released on caller failure and acquired again', async () => {
 });
 
 test('lease rejects names that could alias paths', () => {
-  for (const name of ['', 'a/b', 'a\\b']) {
+  for (const name of ['', '.', '..', 'a\0b', 'a/b', 'a\\b']) {
     assert.throws(() => acquireDatabaseLock(name), /bare database filename/);
   }
 });

@@ -471,6 +471,13 @@ required. The later completed-run summary records two successful actual-quota ru
 
 ## Browser verification
 
+The [writable VFS contract audit](VFS-CONTRACT.md) adds checked 64-bit callback
+offsets, stricter opens, local lock-state reporting, and explicit rejection of
+unsupported SQL settings/attachments. Its **Run VFS contract checks** passed
+twice; writable/cross-tab regressions for this change also each passed twice,
+completing the audit's browser acceptance. See the contract
+document for the supported operations and exact run instructions.
+
 All original storage checks passed on 2026-09-21 in **Firefox 156.0 (aarch64)**
 (before the SQLite check was added):
 
@@ -757,6 +764,49 @@ All eight cases passed twice, for 16 successful runs. The surviving version at
 declared scope. We retain the bounded experimental whole-file design and defer a
 persistent durability protocol, as recorded in
 [the recovery decision](FINAL-RECOVERY.md#recovery-decision-for-this-experiment).
+
+### VFS contract results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all VFS contract checks completed
+PASS: invalid filenames rejected before storage or SQLite access
+PASS: direct VFS contract checks: flags, single handle, 64-bit offsets, short reads, size limits, locks, access/delete, and capabilities
+PASS: unsupported journal/sync/spill/temp settings, ATTACH, and VACUUM rejected; configured mode and rollback preserved
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: committed bytes unchanged; fresh VFS/connection reopened rows and integrity_check after rejected operations
+PASS: contract fixture removed; pre-created main file only, memory journal, exclusive owner, 1 MiB limit
+```
+
+The writable SQLite and cross-tab lock checks each passed **twice** after these
+changes. Results:
+
+```text
+PASS: all writable SQLite checks completed
+PASS: direct xWrite/xRead saw pending bytes; xSync published them; xTruncate published an empty file
+PASS: SQL commits, rollback, and close with an uncommitted transaction and integrity_check (7 xWrite calls; 5 publications)
+PASS: xSync suspended with event-loop progress (12 ticks); overlapping SQLite probe rejected
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: reopening discarded buffered state; committed rows survived and uncommitted deletion did not
+PASS: SQL publication rejection mapped to SQLITE_IOERR_FSYNC; pre-publication contents unchanged
+PASS: fresh VFS/connection recovered after injected publication failure
+PASS: test files removed; memory journal only, no crash-durability claim
+```
+
+```text
+PASS: all cross-tab lock checks completed
+PASS: second tab initialized its own WASM instance
+PASS: second-tab writable and read-only opens rejected with SQLITE_BUSY while owner held the lock
+PASS: rejected contenders left database bytes unchanged
+PASS: owner completed SQL publication and released its lock
+PASS: second tab acquired after release and verified committed rows and integrity_check
+PASS: lock released after second-tab error; original tab reopened successfully
+PASS: test database removed; cooperative exclusive access only, no crash-recovery claim
+```
+
+The contract audit and its required regressions are complete within the
+documented experimental scope. Application integration remains the next stage.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,

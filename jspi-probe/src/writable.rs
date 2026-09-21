@@ -8,7 +8,12 @@ use sqlite_wasm_rs::{
         VfsResult, VfsStore, ffi,
     },
 };
-use std::{cell::RefCell, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    time::Duration,
+};
+
+mod contract;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(module = "/publication.js")]
@@ -131,6 +136,8 @@ impl VfsFile for Buffer {
 struct Data {
     name: String,
     buffer: RefCell<Option<Buffer>>,
+    opened: Cell<bool>,
+    lock: Cell<i32>,
 }
 struct Store;
 impl VfsStore<Buffer, Data> for Store {
@@ -180,8 +187,141 @@ impl SQLiteIoMethods for Io {
     type AppData = Data;
     type Store = Store;
     const VERSION: i32 = 1;
-    // Defaults: no shared memory/WAL, no locking, no device guarantees. xClose
-    // deliberately does not flush: uncommitted changes must not publish on drop.
+    // Web Lock ownership spans the whole connection. Track SQLite's local lock
+    // level for its callback contract; no shared-memory or device guarantees.
+    unsafe extern "C" fn xClose(file: *mut ffi::sqlite3_file) -> i32 {
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        let data = unsafe { Store::app_data(raw.vfs) };
+        let code = unsafe { Self::xCloseImpl(file) };
+        data.opened.set(false);
+        data.lock.set(ffi::SQLITE_LOCK_NONE);
+        unsafe {
+            (*file).pMethods = std::ptr::null();
+        }
+        code
+    }
+    unsafe extern "C" fn xRead(
+        file: *mut ffi::sqlite3_file,
+        output: *mut std::ffi::c_void,
+        amount: i32,
+        offset: i64,
+    ) -> i32 {
+        if amount <= 0 || output.is_null() || offset < 0 {
+            return ffi::SQLITE_IOERR_READ;
+        }
+        let Ok(offset) = usize::try_from(offset) else {
+            unsafe {
+                std::ptr::write_bytes(output.cast::<u8>(), 0, amount as usize);
+            }
+            return ffi::SQLITE_IOERR_SHORT_READ;
+        };
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        match Store::with_file(raw, |buffer| {
+            let slice =
+                unsafe { std::slice::from_raw_parts_mut(output.cast::<u8>(), amount as usize) };
+            Ok(if buffer.read(slice, offset)? {
+                ffi::SQLITE_OK
+            } else {
+                ffi::SQLITE_IOERR_SHORT_READ
+            })
+        }) {
+            Ok(code) => code,
+            Err(error) => unsafe { Store::app_data(raw.vfs) }.store_err(error),
+        }
+    }
+    unsafe extern "C" fn xWrite(
+        file: *mut ffi::sqlite3_file,
+        input: *const std::ffi::c_void,
+        amount: i32,
+        offset: i64,
+    ) -> i32 {
+        if amount <= 0 || input.is_null() || offset < 0 {
+            return ffi::SQLITE_IOERR_WRITE;
+        }
+        let Ok(offset) = usize::try_from(offset) else {
+            return ffi::SQLITE_FULL;
+        };
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        let slice = unsafe { std::slice::from_raw_parts(input.cast::<u8>(), amount as usize) };
+        match Store::with_file_mut(raw, |buffer| {
+            buffer.write(slice, offset)?;
+            Ok(ffi::SQLITE_OK)
+        }) {
+            Ok(code) => code,
+            Err(error) => unsafe { Store::app_data(raw.vfs) }.store_err(error),
+        }
+    }
+    unsafe extern "C" fn xTruncate(file: *mut ffi::sqlite3_file, size: i64) -> i32 {
+        if size < 0 {
+            return ffi::SQLITE_IOERR_TRUNCATE;
+        }
+        let Ok(size) = usize::try_from(size) else {
+            return ffi::SQLITE_FULL;
+        };
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        match Store::with_file_mut(raw, |buffer| {
+            buffer.truncate(size)?;
+            Ok(ffi::SQLITE_OK)
+        }) {
+            Ok(code) => code,
+            Err(error) => unsafe { Store::app_data(raw.vfs) }.store_err(error),
+        }
+    }
+    unsafe extern "C" fn xLock(file: *mut ffi::sqlite3_file, level: i32) -> i32 {
+        if !(ffi::SQLITE_LOCK_SHARED..=ffi::SQLITE_LOCK_EXCLUSIVE).contains(&level) {
+            return ffi::SQLITE_IOERR_LOCK;
+        }
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        let data = unsafe { Store::app_data(raw.vfs) };
+        data.lock.set(data.lock.get().max(level));
+        ffi::SQLITE_OK
+    }
+    unsafe extern "C" fn xUnlock(file: *mut ffi::sqlite3_file, level: i32) -> i32 {
+        if level != ffi::SQLITE_LOCK_NONE && level != ffi::SQLITE_LOCK_SHARED {
+            return ffi::SQLITE_IOERR_UNLOCK;
+        }
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        let data = unsafe { Store::app_data(raw.vfs) };
+        data.lock.set(data.lock.get().min(level));
+        ffi::SQLITE_OK
+    }
+    unsafe extern "C" fn xCheckReservedLock(file: *mut ffi::sqlite3_file, out: *mut i32) -> i32 {
+        let raw = unsafe { SQLiteVfsFile::from_file(file) };
+        unsafe {
+            *out = i32::from(Store::app_data(raw.vfs).lock.get() >= ffi::SQLITE_LOCK_RESERVED);
+        }
+        ffi::SQLITE_OK
+    }
+    unsafe extern "C" fn xFileControl(
+        _: *mut ffi::sqlite3_file,
+        op: i32,
+        arg: *mut std::ffi::c_void,
+    ) -> i32 {
+        if op == ffi::SQLITE_FCNTL_PRAGMA && !arg.is_null() {
+            let args = arg.cast::<*const std::ffi::c_char>();
+            let name = unsafe { *args.add(1) };
+            let value = unsafe { *args.add(2) };
+            if !name.is_null() && !value.is_null() {
+                let name = unsafe { std::ffi::CStr::from_ptr(name) }
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                let value = unsafe { std::ffi::CStr::from_ptr(value) }
+                    .to_string_lossy()
+                    .to_ascii_lowercase();
+                let allowed = match name.as_str() {
+                    "journal_mode" => value == "memory",
+                    "synchronous" => value == "full" || value == "2",
+                    "cache_spill" => value == "off" || value == "0",
+                    "temp_store" => value == "memory" || value == "2",
+                    _ => true,
+                };
+                if !allowed {
+                    return ffi::SQLITE_ERROR;
+                }
+            }
+        }
+        ffi::SQLITE_NOTFOUND
+    }
 }
 struct Vfs;
 impl SQLiteVfs<Io> for Vfs {
@@ -205,10 +345,32 @@ impl SQLiteVfs<Io> for Vfs {
         unsafe {
             (*file).pMethods = std::ptr::null();
         }
-        if flags & ffi::SQLITE_OPEN_MAIN_DB == 0 {
+        let allowed =
+            ffi::SQLITE_OPEN_MAIN_DB | ffi::SQLITE_OPEN_READWRITE | ffi::SQLITE_OPEN_CREATE;
+        if name.is_null()
+            || flags & !allowed != 0
+            || flags & (ffi::SQLITE_OPEN_MAIN_DB | ffi::SQLITE_OPEN_READWRITE)
+                != (ffi::SQLITE_OPEN_MAIN_DB | ffi::SQLITE_OPEN_READWRITE)
+        {
             return ffi::SQLITE_CANTOPEN;
         }
-        unsafe { Self::xOpenImpl(vfs, name, file, flags, out) }
+        let data = unsafe { Store::app_data(vfs) };
+        if data.opened.get() {
+            return ffi::SQLITE_BUSY;
+        }
+        if data
+            .buffer
+            .borrow()
+            .as_ref()
+            .is_some_and(|b| b.dirty || b.failed)
+        {
+            return ffi::SQLITE_CANTOPEN;
+        }
+        let code = unsafe { Self::xOpenImpl(vfs, name, file, flags, out) };
+        if code == ffi::SQLITE_OK {
+            data.opened.set(true);
+        }
+        code
     }
 }
 struct Registration(Box<ffi::sqlite3_vfs>);
@@ -300,6 +462,8 @@ fn run(
     }
     let mut data = Box::new(VfsAppData::new(Data {
         name: name.clone(),
+        opened: Cell::new(false),
+        lock: Cell::new(ffi::SQLITE_LOCK_NONE),
         buffer: RefCell::new(Some(Buffer {
             name: name.clone(),
             bytes,
@@ -323,6 +487,10 @@ fn run(
     }
     let mut registration = Registration(vfs);
     let mut logs = Vec::new();
+    if operation == "contract" {
+        contract::callbacks(&mut registration.0, &data)?;
+        logs.push("PASS: direct VFS contract checks: flags, single handle, 64-bit offsets, short reads, size limits, locks, access/delete, and capabilities".into());
+    }
     if create {
         // Direct callback checks ensure read-your-writes is tested below SQLite's
         // pager cache. All raw callback buffers have explicit byte element types.
@@ -385,8 +553,32 @@ fn run(
             "jspi-writable-probe",
         )?;
         db.execute_batch(
-            "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=FULL; PRAGMA cache_spill=OFF;",
+            "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=FULL; PRAGMA cache_spill=OFF; PRAGMA temp_store=MEMORY;",
         )?;
+        unsafe extern "C" fn authorize(
+            _: *mut std::ffi::c_void,
+            action: i32,
+            _: *const std::ffi::c_char,
+            _: *const std::ffi::c_char,
+            _: *const std::ffi::c_char,
+            _: *const std::ffi::c_char,
+        ) -> i32 {
+            if action == ffi::SQLITE_ATTACH || action == ffi::SQLITE_DETACH {
+                ffi::SQLITE_DENY
+            } else {
+                ffi::SQLITE_OK
+            }
+        }
+        let code = unsafe {
+            sqlite_wasm_rs::sqlite3_set_authorizer(
+                db.handle(),
+                Some(authorize),
+                std::ptr::null_mut(),
+            )
+        };
+        if code != ffi::SQLITE_OK {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
         if create {
             db.execute_batch(
                 "CREATE TABLE writable(id INTEGER PRIMARY KEY, payload BLOB NOT NULL);
@@ -410,6 +602,10 @@ fn run(
         };
         if rows != expected || integrity != "ok" {
             return Err(rusqlite::Error::InvalidQuery);
+        }
+        if operation == "contract" {
+            contract::sql(&db)?;
+            logs.push("PASS: unsupported journal/sync/spill/temp settings, ATTACH, and VACUUM rejected; configured mode and rollback preserved".into());
         }
         if operation == "mutate" {
             db.execute_batch(

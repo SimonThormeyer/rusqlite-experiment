@@ -1,3 +1,4 @@
+import { runContractChecks } from './contract-checks.js';
 import { runPublicationChecks } from './publication-checks.js';
 import init, { write, read, _delete as remove, wait_for } from './pkg/jspi_probe.js';
 import { runSqliteChecks } from './sqlite-checks.js';
@@ -8,6 +9,7 @@ import { prepareWritableReload, finishWritableReload } from './reload-checks.js'
 import { runCrossTabChecks } from './cross-tab-checks.js';
 import { runTerminationChecks, runUncommittedChecks } from './termination-checks.js';
 
+const contractButton = document.querySelector('#contract');
 const publicationButton = document.querySelector('#publication');
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
@@ -18,7 +20,7 @@ const reloadButton = document.querySelector('#writable-reload');
 const lockButton = document.querySelector('#cross-tab');
 const terminationButton = document.querySelector('#owner-close');
 const uncommittedButton = document.querySelector('#uncommitted-close');
-const setBusy = (busy) => { for (const control of [publicationButton, button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton, lockButton, terminationButton, uncommittedButton]) control.disabled = busy; };
+const setBusy = (busy) => { for (const control of [contractButton, publicationButton, button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton, lockButton, terminationButton, uncommittedButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -127,6 +129,7 @@ async function runAdditionalChecks(checks, label) {
     setBusy(false);
   } catch (error) { fail(error); }
 }
+contractButton.addEventListener('click', () => runAdditionalChecks(runContractChecks, 'VFS contract'));
 publicationButton.addEventListener('click', () => runAdditionalChecks(runPublicationChecks, 'publication interruption and recovery'));
 sqliteButton.addEventListener('click', () => runAdditionalChecks(runSqliteChecks, 'SQLite callback'));
 readonlyButton.addEventListener('click', () => runAdditionalChecks(runReadonlyChecks, 'OPFS read-only'));

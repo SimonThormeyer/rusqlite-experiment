@@ -1,6 +1,6 @@
 // Cooperating SQLite probes use the exact OPFS directory + bare filename as key.
 export function databaseLockName(name) {
-  if (!name || name.includes('/') || name.includes('\\')) throw new Error('Expected a bare database filename');
+  if (!name || name === '.' || name === '..' || name.includes('\0') || name.includes('/') || name.includes('\\')) throw new Error('Expected a bare database filename');
   return `rusqlite-jspi-probe:database:${JSON.stringify(name)}`;
 }
 
