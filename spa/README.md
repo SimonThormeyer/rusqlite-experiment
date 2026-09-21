@@ -31,9 +31,11 @@ A follow-up check interrupting an uncommitted transaction before COMMIT or any
 VFS write also passed twice; the application remains unchanged.
 This SPA still uses IndexedDB.
 The standalone publication interruption and recovery suite passed twice, followed
-by two successful writable regression runs. Recovery design, actual quota
-exhaustion, and process-crash checks remain open; SPA integration follows that
-investigation.
+by two successful writable regression runs. Actual quota exhaustion and all
+seven process-termination checks passed twice.
+The [final recovery batch](../jspi-probe/FINAL-RECOVERY.md) is complete within its
+experimental scope; the decision retains the bounded whole-file design without
+a power-loss durability claim. The VFS contract audit and SPA integration follow.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,

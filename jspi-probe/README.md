@@ -442,12 +442,32 @@ awaits close, and aborts on failure where possible. Rust then compares a fresh
 read with the buffer. Hooks only provide observation/fault boundaries; normal
 calls use no-op hooks. The memory rollback journal and 1 MiB limit are unchanged.
 
-The combined stage is not complete merely because this suite passes. Actual
-quota exhaustion, browser-process crash behavior, and any required persistent
-journal/recovery protocol still need investigation. Tab/document lifecycle
-results cannot establish power-loss durability. We will use the observed
-publication outcomes to choose the next recovery implementation rather than
-assume an atomic or durable SQLite commit from OPFS close alone.
+This suite alone did not complete the combined stage. The final batch below
+subsequently added real-quota and manually confirmed process-termination checks, all
+passing twice. The recovery decision retains the bounded experimental
+whole-file design; a persistent durability protocol is deferred. These results
+do not establish power-loss durability or a general durable SQLite commit guarantee.
+
+## Final combined-stage batch
+
+The [final recovery procedure](FINAL-RECOVERY.md) brings the final checks
+together: bounded actual OPFS quota exhaustion under a reduced Firefox test-profile
+quota, and seven process-termination boundaries with downloadable checkpoints.
+The dedicated [recovery page](http://localhost:8081/final-recovery.html) preserves
+old/new hashes, verifies SQL rows/integrity and unchanged bytes after restart,
+and exercises a subsequent COMMIT and fresh reopen. Forced process termination
+is manually confirmed; a page cannot distinguish it from a reload on its own.
+
+The decision in that procedure retains the whole-file experimental backend within
+its documented limits, with two passes for every final check. Any failed
+recovery blocks integration; no persistent durability protocol
+is claimed. The WASM release build and ten local Node tests pass, covering
+locks, publication rejection
+behavior, checkpoint validation, and allowed recovery outcomes.
+The first quota attempt stopped at the estimate precheck (reported 10 GiB),
+before exhausting storage. The precheck now logs the estimate instead; the
+independent 48 MiB allocation cap remains, and a real quota rejection is still
+required. The later completed-run summary records two successful actual-quota runs.
 
 ## Browser verification
 
@@ -704,8 +724,39 @@ close-started and after-close cases retained the exact new database. The
 close-started observation does not establish that close was still pending when
 the owner was destroyed. Rejection after successful close retained the new
 database despite the SQLite error, demonstrating why callers must treat such a
-COMMIT result as ambiguous. Actual quota exhaustion, process-crash behavior, and
-the persistent recovery design remain open within the combined stage.
+COMMIT result as ambiguous. The final batch below completes the remaining checks
+within the documented experimental scope.
+
+### Final quota and process-termination results
+
+All checks passed, with this completed-run summary:
+
+```text
+actual quota: 2/2
+before-open: 2/2
+after-open: 2/2
+after-half-write: 2/2
+before-close: 2/2
+close-started: 2/2
+after-close: 2/2
+commit-returned: 2/2
+```
+
+Final case results:
+
+```text
+PASS: process-termination recovery check
+PASS: commit-returned: complete new database survived process termination; lock reacquired, rows and integrity_check passed; bytes unchanged
+PASS: subsequent COMMIT and fresh reopen succeeded on the recovered database
+PASS: crash test database removed
+SCOPE: forced shutdown is manually confirmed; close-started may have completed before termination; no power-loss guarantee
+```
+
+All eight cases passed twice, for 16 successful runs. The surviving version at
+`close-started` is not recorded here. The combined stage is complete within its
+declared scope. We retain the bounded experimental whole-file design and defer a
+persistent durability protocol, as recorded in
+[the recovery decision](FINAL-RECOVERY.md#recovery-decision-for-this-experiment).
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,

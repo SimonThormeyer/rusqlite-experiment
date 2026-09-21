@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quota and process-crash recovery</title>
+<style>
+body { font: 17px/1.5 system-ui,sans-serif; max-width: 55rem; margin: 2rem auto; padding: 0 1rem; }
+button,select { font: inherit; margin: .4rem; padding: .4rem; }
+pre { white-space: pre-wrap; background: #eee; padding: 1rem; }
+#status { font-weight: bold; }
+</style>
+<h1>Finish the combined recovery stage</h1>
+<p>Use a dedicated Firefox test profile, with all other Firefox windows closed.
+In that profile's about:config set the Number preference
+<code>dom.quotaManager.temporaryStorage.fixedLimit</code> to <code>32768</code>,
+then restart that profile. Use this exact localhost origin throughout.</p>
+<p><a href="./FINAL-RECOVERY.md">Full procedure and recovery decision</a> · <a href="./">Earlier checks</a></p>
+<label><input id="isolated" type="checkbox"> I am using the dedicated test profile.</label>
+<h2>1. Real quota</h2>
+<p>Run twice. The test retains filler files until a real quota error, tries a growing
+SQLite COMMIT, then frees space and verifies recovery. It writes at most 48 MiB
+of filler and fails if it cannot exhaust quota within that limit.</p>
+<button id="quota" disabled>Run actual quota checks</button>
+<h2>2. Process termination</h2>
+<p>Run every boundary twice. Prepare creates a database and a downloadable checkpoint.
+Save that checkpoint before arming. When the status says ARMED, force-quit the
+test Firefox using macOS Force Quit (⌥⌘Esc); do not quit normally or just close a tab.
+Reopen the same profile and this page, import the checkpoint if needed, confirm
+the forced shutdown below, and verify. The page cannot detect how Firefox exited.</p>
+<label>Boundary <select id="phase"></select></label>
+<button id="prepare" disabled>Prepare crash check</button>
+<button id="download" disabled>Download checkpoint</button>
+<label><input id="saved" type="checkbox"> Checkpoint saved outside the browser.</label>
+<button id="arm" disabled>Arm selected boundary</button>
+<p>After restarting:</p>
+<label>Restore checkpoint <input id="import" type="file" accept="application/json,.json" disabled></label>
+<p><label><input id="forced" type="checkbox"> I saw ARMED for this boundary, force-quit the test Firefox, and restarted the same profile.</label></p>
+<button id="verify" disabled>Verify after process termination</button>
+<p>To restart an unfinished run, discard its checkpoint and test database below.
+Completed results are kept. If currently ARMED, reload this page first.</p>
+<button id="discard" disabled>Discard pending run</button>
+<button id="export" disabled>Download results</button>
+<p id="status" role="status">Loading…</p>
+<pre id="log"></pre>
+<pre id="coverage"></pre>
+<script type="module" src="./final-recovery.js"></script>
+</html>

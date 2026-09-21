@@ -272,7 +272,10 @@ pub fn sqlite_publication_probe(
     operation: String,
     hook: Function,
 ) -> Result<String, JsValue> {
-    if !matches!(operation.as_str(), "mutate" | "verify-old" | "verify-new") {
+    if !matches!(
+        operation.as_str(),
+        "mutate" | "grow" | "restore" | "verify-old" | "verify-new"
+    ) {
         return Err(js_error("unknown publication operation"));
     }
     let ready = Function::new_no_args("return Promise.resolve()");
@@ -397,7 +400,7 @@ fn run(
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
         let integrity: String = db.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
-        let expected = if operation == "verify-new" {
+        let expected = if matches!(operation, "verify-new" | "restore") {
             vec![
                 (1, vec![0xde, 0xad, 0xbe, 0xef]),
                 (3, vec![0xca, 0xfe, 0xba, 0xbe]),
@@ -414,6 +417,21 @@ fn run(
                 UPDATE writable SET payload=x'deadbeef' WHERE id=1;
                 DELETE FROM writable WHERE id=2;
                 INSERT INTO writable VALUES(3,x'cafebabe'); COMMIT;",
+            )?;
+        }
+        if operation == "restore" {
+            db.execute_batch(
+                "BEGIN IMMEDIATE;
+                UPDATE writable SET payload=x'00ff80' WHERE id=1;
+                DELETE FROM writable WHERE id=3;
+                INSERT INTO writable VALUES(2,x'5ac3'); COMMIT;",
+            )?;
+        }
+        if operation == "grow" {
+            // A real quota test must require new storage even if a browser can
+            // reuse allocation for a same-size replacement.
+            db.execute_batch(
+                "BEGIN IMMEDIATE; INSERT INTO writable VALUES(3, zeroblob(524288)); COMMIT;",
             )?;
         }
         // Dropping an uncommitted transaction must not publish its changes.
