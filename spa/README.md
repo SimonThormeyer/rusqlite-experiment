@@ -20,6 +20,9 @@ passed its storage checks in a Firefox 156.0 (aarch64) session. A new
 SQLite callback check also passed twice in browser tests; the SPA is unchanged.
 A read-only OPFS `xRead` probe also passed twice in browser tests, separate
 from this application's build and storage.
+The storage-only probe also passed its OPFS write/truncate/visibility checks;
+a separate buffered writable SQLite probe also passed twice in browser tests.
+This SPA still uses IndexedDB.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,

@@ -18,6 +18,12 @@ marker before running SQL. The database itself stays in memory.</p>
 <p>Read-only database check: copy a known fixture into OPFS, query its pages through
 SQLite's suspending read callback, then remove the copy.</p>
 <button id="readonly" disabled>Run OPFS read-only checks</button>
+<p>Storage-only write check: offset writes, truncation, visibility before and after
+close, and abort. This does not write through SQLite.</p>
+<button id="writes" disabled>Run OPFS write semantics checks</button>
+<p>Writable SQLite check: buffer pending bytes, publish at sync, then reopen the
+OPFS database. One connection and a memory rollback journal; no crash-safety guarantee.</p>
+<button id="writable" disabled>Run writable SQLite checks</button>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>
 <script type="module" src="./main.js"></script>

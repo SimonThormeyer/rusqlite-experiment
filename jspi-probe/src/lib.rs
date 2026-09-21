@@ -4,6 +4,8 @@
 
 mod readonly;
 mod sqlite;
+mod writable;
+mod writes;
 
 thread_local! {
     static SQLITE_BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };

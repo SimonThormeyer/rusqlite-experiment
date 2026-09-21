@@ -1,11 +1,15 @@
 import init, { write, read, _delete as remove, wait_for } from './pkg/jspi_probe.js';
 import { runSqliteChecks } from './sqlite-checks.js';
 import { runReadonlyChecks } from './readonly-checks.js';
+import { runWriteChecks } from './write-checks.js';
+import { runWritableChecks } from './writable-checks.js';
 
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
 const readonlyButton = document.querySelector('#readonly');
-const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton]) control.disabled = busy; };
+const writeButton = document.querySelector('#writes');
+const writableButton = document.querySelector('#writable');
+const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -99,6 +103,8 @@ async function runAdditionalChecks(checks, label) {
 }
 sqliteButton.addEventListener('click', () => runAdditionalChecks(runSqliteChecks, 'SQLite callback'));
 readonlyButton.addEventListener('click', () => runAdditionalChecks(runReadonlyChecks, 'OPFS read-only'));
+writeButton.addEventListener('click', () => runAdditionalChecks(runWriteChecks, 'OPFS write semantics'));
+writableButton.addEventListener('click', () => runAdditionalChecks(runWritableChecks, 'writable SQLite'));
 try {
   assert(isSecureContext && navigator.storage?.getDirectory, 'OPFS requires HTTPS or localhost');
   assert(typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function',

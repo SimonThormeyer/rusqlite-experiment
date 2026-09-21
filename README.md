@@ -14,10 +14,12 @@ This is a staged investigation. A [standalone JSPI/OPFS probe](jspi-probe/README
 passed its original storage checks in a Firefox 156.0 (aarch64) session.
 The SQLite `xOpen` suspension check also passed twice in browser tests.
 The read-only OPFS `xRead` probe also passed twice in browser tests.
+A storage-only write/truncate/visibility probe also passed a browser test.
 See the [recorded results](jspi-probe/README.md#browser-verification).
 The TODO application still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
 `multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
-A writable replacement VFS and SPA integration are not implemented.
+A minimal buffered writable VFS probe also passed twice in browser tests.
+Crash-safe storage and SPA integration are not implemented.
 
 ### Proposed architecture
 
@@ -46,7 +48,11 @@ Each stage should produce a reviewable result before moving to the next. The
 documentation and standalone storage feasibility stages are complete. Stage 3
 has a verified [callback probe](jspi-probe/README.md#sqlite-callback-check), including
 two successful runs, and a [read-only OPFS probe](jspi-probe/README.md#read-only-opfs-check)
-verified in two successful runs. A writable VFS and stages 4–6 remain future work. The
+verified in two successful runs. The next storage-only probe checks offset writes,
+truncation, visibility on close, and abort before implementing SQLite write
+callbacks; one successful run is recorded. A buffered writable VFS passed twice
+with a memory rollback journal. Persistent journaling and stages
+4–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB

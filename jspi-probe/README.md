@@ -3,6 +3,8 @@
 This standalone experiment exercises Promise-based OPFS from synchronous Rust
 functions on the browser's main page. Additional checks exercise SQLite's `xOpen`
 callback and read an immutable SQLite fixture from OPFS through `xRead`.
+A storage-only write-semantics check investigates the next prerequisites.
+A minimal buffered writable VFS now tests publication through SQLite's `xSync`.
 None uses a worker or changes the TODO application's IndexedDB backend.
 
 ## Run it
@@ -23,10 +25,20 @@ For the callback boundary check, click **Run SQLite callback checks**. This does
 reload the page. Keep the tab foregrounded and expect **PASS: all SQLite callback
 checks completed**, then run it again to check cleanup and repeatability.
 
-For the current step, click **Run OPFS read-only checks**. It copies the bundled
+For the read-only step, click **Run OPFS read-only checks**. It copies the bundled
 database fixture into OPFS, queries it through the read-only VFS, checks errors
 and cleanup, and displays **PASS: all OPFS read-only checks completed**. It does
 not reload the page. Run it twice and report the output and browser version.
+
+For the storage-only write step, click **Run OPFS write semantics checks**. Keep the page
+foregrounded and expect **PASS: all OPFS write semantics checks completed**.
+Run it twice and report all output, including the `OBSERVED` line. This check
+does not reload the page and does not write a SQLite database.
+
+For the current step, click **Run writable SQLite checks**. Expect **PASS: all
+writable SQLite checks completed**. Run it twice and report the output. It uses
+fresh test files, one connection at a time, and a memory rollback journal. There
+is no page reload or crash test.
 
 Prerequisites: Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 `miniserve`. The first build may download the matching wasm-bindgen CLI.
@@ -77,6 +89,9 @@ wasm-bindgen CLI **0.2.128**. Rust formatting, JavaScript syntax, and generated
 export names were checked. The storage and `xOpen` probes passed browser
 verification as recorded below. The callback and read-only `xRead` checks each
 passed twice.
+The storage-only write-semantics probe passed a browser test using the
+same pinned toolchain. A second successful run remains unverified.
+The buffered writable VFS passed two browser tests with that toolchain.
 
 ## SQLite callback check
 
@@ -148,10 +163,86 @@ SQLite closes before VFS unregistration and before the file snapshot is dropped.
 The original file-access exports remain independent of the SQLite guard, so it
 is the caller's responsibility to leave the fixture unchanged during a run.
 
-This advances the read side only. Database creation, `xWrite`, durable sync,
-journaling, crash recovery, encryption, and integration into the app remain
-future work. Reopening is tested within one page; querying after a page reload
-is not part of this check.
+This check advances the read side only. The separate writable probe below adds
+buffered writes; durable sync, persistent journaling, crash recovery, encryption,
+and app integration remain future work. Reopening is tested within one page;
+querying after a page reload is not part of this check.
+
+## OPFS write semantics check
+
+The Rust export uses synchronous functions with JSPI suspension for all storage
+operations. Each run owns a uniquely named binary file and removes it afterward.
+Writers use `keepExistingData: true`; fresh-reader checks reopen the handle and
+obtain a new `File`. The checks assert:
+
+- An offset write preserves the untouched prefix and suffix.
+- Fresh readers see the previous contents after the write Promise resolves but
+  before the stream closes, then see the changed contents after close resolves.
+- Truncating shrinks the file, growing it fills the extension with zeros, and
+  writing beyond EOF fills the gap with zeros. Visibility is checked before and
+  after closing each writer.
+- Explicit abort discards both pending truncation and writing.
+- Writing on a closed stream rejects without changing the file; opening another
+  writer after abort/rejection works.
+- Truncating to zero publishes an empty file after close.
+
+The probe also reports whether a `File` obtained before the first write remains
+readable, returns updated contents, or rejects after close. This is an observation,
+not a portability assumption; a future writable VFS must refresh its read handles.
+The recorded run passed the assertions and the old File rejected with
+`AbortError`. Failures include the operation phase and expected/actual byte arrays.
+
+In the recorded run, a fresh `File` did not see pending writes until the stream
+closed. A future `xWrite`/`xRead` implementation therefore needs an explicit design
+for read-your-writes, publication, refreshing snapshots, and reopening the writer.
+This check does **not** establish that close is a durable `xSync`, that
+abort provides SQLite transaction rollback, or that multi-file journal updates
+are crash-safe. No SQLite write callbacks, journaling, concurrent writers, quota
+failure simulation, or crash tests are added in this step.
+
+## Buffered writable SQLite check
+
+`jspi-writable-probe` implements one main file using a whole-file Rust buffer,
+limited to 1 MiB. It loads the file from OPFS when the export starts. `xWrite` and
+`xTruncate` update that buffer, including zero-filled extensions; `xRead` and
+`xFileSize` consult it. This intentionally trades memory and copying costs for a
+small, inspectable read-your-writes implementation. It does not yet combine the
+previous range-reader with a dirty-page overlay.
+
+`xSync` writes the complete buffer to an OPFS stream, waits for close, and verifies
+the bytes through a freshly acquired `File`. Only then does it mark the buffer
+clean. This is **publication, not a proven durable fsync**. `xClose` does not
+publish. Publication failure poisons the buffer to prevent retries within the
+same connection; subsequent use requires a fresh VFS and connection. Actual
+failure during close may have an ambiguous publication outcome.
+
+The caller pre-creates an empty, uniquely named file. Only main-database opens
+are supported; journal/temporary files and WAL are rejected. SQLite is configured
+with `journal_mode=MEMORY`, `synchronous=FULL`, and `cache_spill=OFF`. The memory
+journal permits ordinary rollback but provides no recovery after a crash. Lock
+callbacks are no-ops: the test owns its file, permits one SQLite probe per WASM
+instance, and does not support shared files across tabs or concurrent writers.
+
+The browser checks cover:
+
+- Direct `xWrite`/`xRead` calls proving pending bytes are readable below SQLite's
+  pager cache while OPFS still contains the old file; `xSync` publication and
+  `xTruncate` back to an empty file.
+- Event-loop progress during a controlled wait inside `xSync`, plus rejection
+  of an overlapping SQLite probe.
+- Creating a database, inserting binary data, committing, rolling back an update,
+  and checking exact rows and `integrity_check`.
+- Closing an uncommitted deletion, then opening a fresh VFS and connection that
+  reloads only the OPFS bytes. The committed rows must remain and verification
+  must leave published bytes unchanged.
+- Injecting a rejected Promise before a SQL-triggered publication. It must reach
+  rusqlite as `SQLITE_IOERR_FSYNC` (1034) with the original JS cause, leave the
+  previous file unchanged, and allow recovery with a fresh VFS/connection.
+
+The last failure is injected before any OPFS mutation; it does not simulate disk
+failure, quota exhaustion, partial writes, or a failed close. Test files are
+removed after the run. Persistent journaling, cross-tab locking, page-reload
+verification of this writable path, performance, and encryption are future steps.
 
 ## Browser verification
 
@@ -211,7 +302,50 @@ This verifies querying the immutable OPFS fixture through suspending range reads
 short-read handling, read-error propagation, recovery, and repeatability. It does
 not verify database writes, journaling, cross-tab locking, or crash durability.
 
+### OPFS write semantics results
+
+The storage-only write-semantics checks passed once. Repeatability remains
+unverified.
+
+```text
+PASS: all OPFS write semantics checks completed
+PASS: offset write preserved prefix/suffix; fresh readers saw old bytes before close and new bytes after close
+OBSERVED: pre-write File after close: read rejected: JsValue(AbortError: The operation was aborted.  )
+PASS: truncate shrank and grew the file; growth was zero-filled and visible after close
+PASS: write beyond EOF extended the file with a zero-filled gap
+PASS: explicit abort discarded both truncate and write
+PASS: closed-stream write rejected; reopening after abort/rejection succeeded
+PASS: truncate to zero published an empty file after close
+PASS: test file removed; no SQLite writes or durability claims
+```
+
+The buffered writable design accounts for publication on close and invalidation
+of old File snapshots. These storage-only observations establish visibility in
+the tested browser, not SQLite transaction or crash-durability guarantees.
+
+### Buffered writable SQLite results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all writable SQLite checks completed
+PASS: direct xWrite/xRead saw pending bytes; xSync published them; xTruncate published an empty file
+PASS: SQL commits, rollback, and close with an uncommitted transaction and integrity_check (7 xWrite calls; 5 publications)
+PASS: xSync suspended with event-loop progress (13 ticks); overlapping SQLite probe rejected
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: reopening discarded buffered state; committed rows survived and uncommitted deletion did not
+PASS: SQL publication rejection mapped to SQLITE_IOERR_FSYNC; pre-publication contents unchanged
+PASS: fresh VFS/connection recovered after injected publication failure
+PASS: test files removed; memory journal only, no crash-durability claim
+```
+
+This verifies buffered read-your-writes, publication, ordinary SQL commit and
+rollback, reopening from OPFS, recovery from a failure injected before publication,
+and repeatability. Reopening used a fresh VFS/connection in the same page; a fresh
+WASM instance after page reload has not yet been tested for this writable path.
+Persistent journaling, cross-tab locking, and crash durability remain unverified.
+
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
-with binary data and error propagation. Writable VFS semantics, locking, crash
-durability, encryption, and database performance require subsequent work and
-verification.
+with binary data and error propagation. Production-ready writable VFS semantics,
+locking, crash durability, encryption, and database performance require subsequent
+work and verification.
