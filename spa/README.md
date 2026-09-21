@@ -27,6 +27,8 @@ Exclusive Web Locks now wrap the standalone read-only and writable probes;
 their two-tab ownership check passed twice in browser tests.
 The writable regression checks with locking enabled also passed twice.
 The standalone owner-tab termination check also passed twice in browser tests.
+A follow-up check interrupting an uncommitted transaction before COMMIT or any
+VFS write also passed twice; the application remains unchanged.
 This SPA still uses IndexedDB.
 
 During that later integration, database operations that can suspend will return

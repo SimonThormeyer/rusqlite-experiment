@@ -5,7 +5,7 @@ import { runWriteChecks } from './write-checks.js';
 import { runWritableChecks } from './writable-checks.js';
 import { prepareWritableReload, finishWritableReload } from './reload-checks.js';
 import { runCrossTabChecks } from './cross-tab-checks.js';
-import { runTerminationChecks } from './termination-checks.js';
+import { runTerminationChecks, runUncommittedChecks } from './termination-checks.js';
 
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
@@ -15,7 +15,8 @@ const writableButton = document.querySelector('#writable');
 const reloadButton = document.querySelector('#writable-reload');
 const lockButton = document.querySelector('#cross-tab');
 const terminationButton = document.querySelector('#owner-close');
-const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton, lockButton, terminationButton]) control.disabled = busy; };
+const uncommittedButton = document.querySelector('#uncommitted-close');
+const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton, lockButton, terminationButton, uncommittedButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -130,6 +131,7 @@ writeButton.addEventListener('click', () => runAdditionalChecks(runWriteChecks, 
 writableButton.addEventListener('click', () => runAdditionalChecks(runWritableChecks, 'writable SQLite'));
 lockButton.addEventListener('click', () => runAdditionalChecks(runCrossTabChecks, 'cross-tab lock'));
 terminationButton.addEventListener('click', () => runAdditionalChecks(runTerminationChecks, 'owner-tab termination'));
+uncommittedButton.addEventListener('click', () => runAdditionalChecks(runUncommittedChecks, 'uncommitted transaction interruption'));
 try {
   assert(isSecureContext && navigator.storage?.getDirectory, 'OPFS requires HTTPS or localhost');
   assert(typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function',

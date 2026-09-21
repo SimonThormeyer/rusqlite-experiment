@@ -23,6 +23,8 @@ The writable-database page-reload check also passed twice in browser tests.
 Exclusive Web Locks now protect the read-only and writable SQLite exports; a
 two-tab ownership check passed twice in browser tests.
 The owner-tab termination check also passed twice in browser tests.
+A controlled uncommitted-transaction interruption check also passed twice, with
+the owner paused before COMMIT or any VFS write.
 Crash-safe storage and SPA integration are not implemented.
 
 ### Proposed architecture
@@ -58,9 +60,10 @@ callbacks; one successful run is recorded. A buffered writable VFS passed twice
 with a memory rollback journal; reopening in a fresh WASM instance after page
 reload passed twice in a separate check. Cross-tab exclusive ownership is
 verified in two successful runs. Writable failure recovery with locking enabled
-also passed twice. Automatic lock release when the owning tab closes is the
-verified in two successful runs. Persistent journaling and stages
-4–6 remain future work. The
+also passed twice. Automatic lock release when the owning tab closes is
+verified in two successful runs. Closing an owner during an uncommitted
+transaction before COMMIT or any VFS write also passed twice. Interruption with
+buffered VFS writes, persistent journaling, and stages 4–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB

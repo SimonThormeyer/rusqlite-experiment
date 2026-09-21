@@ -52,10 +52,15 @@ lock checks completed**. Run it twice and report the output. Both tabs must use
 the same browser profile and origin. Also rerun **Run writable SQLite checks**
 to exercise publication-failure recovery with the new locking enabled.
 
-For the current step, click **Run owner-tab termination checks**. Allow the
+For the owner-lifecycle step, click **Run owner-tab termination checks**. Allow the
 helper tab to open; the test closes it automatically while it owns the database.
 Expect **PASS: all owner-tab termination checks completed** in the original tab.
 Run it twice and report the output. Do not manually close either tab mid-test.
+
+For the current step, click **Run uncommitted interruption checks**. Allow the
+helper tab to open; the test closes it automatically after checking pending row
+changes and before COMMIT. Expect **PASS: all uncommitted transaction interruption
+checks completed** in the original tab. Run it twice and report the output.
 
 Prerequisites: Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 `miniserve`. The first build may download the matching wasm-bindgen CLI.
@@ -116,6 +121,8 @@ Node's Web Locks implementation. The two-tab browser check passed twice. The
 separate writable-check rerun with locking enabled also passed twice.
 The owner-tab termination probe passed twice in browser tests. Its build,
 JavaScript checks, and the three lease tests also pass.
+The uncommitted-transaction interruption probe passed twice in browser
+tests. Its build, JavaScript syntax checks, and Rust formatting checks also pass.
 
 ## SQLite callback check
 
@@ -356,6 +363,28 @@ ownership remains unavailable. Two browser runs passed. This is ordinary
 tab-close lifecycle cleanup, not a browser-process crash, power failure, or
 interrupted commit, and it does not establish crash durability.
 
+## Uncommitted transaction interruption check
+
+This reuses the owner-tab termination protocol with a different hold point. After
+opening and verifying the committed database, the helper executes `BEGIN IMMEDIATE`,
+updates row 1's binary payload, deletes row 2, and inserts row 3. Rust queries and
+checks the changed rows, verifies that autocommit is off, and requires zero VFS
+writes, zero publications, and a clean VFS buffer before reporting that it is held.
+With this small transaction and `cache_spill=OFF`, the changes stay in SQLite's
+pager, not the OPFS file or the VFS buffer.
+
+The surviving tab compares OPFS bytes with its pre-transaction copy while the
+helper is still open. It then confirms exclusive ownership, queues for the lock,
+and closes the helper without resolving its gate or requesting a rollback.
+After browser lock release, the survivor reopens the database and checks the
+original committed rows, binary payloads, integrity, and unchanged file bytes.
+The uncommitted update, deletion, and insertion must all be absent.
+
+Two browser runs passed. This check interrupts an active transaction
+**before COMMIT and before any VFS write/publication**. It does not exercise
+dirty VFS buffer recovery, a partially written OPFS stream, an interrupted close,
+journal recovery, or browser-process crash durability.
+
 ## Browser verification
 
 All original storage checks passed on 2026-09-21 in **Firefox 156.0 (aarch64)**
@@ -544,6 +573,30 @@ or requesting application cleanup. The queued survivor acquired ownership, then
 reopened and verified the unchanged committed database. This verifies tab-close
 lock lifecycle behavior and repeatability, not interrupted-commit recovery or
 browser-process crash durability.
+
+### Uncommitted transaction interruption results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all uncommitted transaction interruption checks completed
+PASS: committed and closed database before owner-tab test (16384 bytes)
+PASS: helper verified uncommitted UPDATE/DELETE/INSERT rows inside an active transaction
+PASS: pending changes remain in SQLite pager (0 xWrite calls; 0 publications)
+PASS: OPFS still contains the exact last committed bytes before owner termination
+PASS: surviving tab received SQLITE_BUSY before owner termination
+PASS: surviving tab queued for the held lock without stealing ownership
+PASS: closing owner tab released its lock and granted the queued waiter
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: committed rows and integrity_check survived; published bytes are unchanged
+PASS: uncommitted update, deletion, and insertion were absent after reopening
+PASS: test database removed; transaction interrupted before COMMIT, no publication/crash-durability claim
+```
+
+The committed database remained byte-for-byte unchanged, and reopening recovered
+the original rows after tab teardown discarded the uncommitted pager state.
+This verifies interruption before COMMIT and before any VFS write. Dirty VFS
+buffer interruption and interruption during OPFS publication remain untested.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,

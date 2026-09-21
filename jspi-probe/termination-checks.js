@@ -11,11 +11,20 @@ function bounded(promise, phase) {
 const equal = (a, b) => a.length === b.length && a.every((value, i) => value === b[i]);
 
 export async function runTerminationChecks(report) {
+  return runOwnerCloseCheck(report, false);
+}
+
+export async function runUncommittedChecks(report) {
+  return runOwnerCloseCheck(report, true);
+}
+
+async function runOwnerCloseCheck(report, uncommitted) {
   assert(navigator.locks?.request && navigator.locks?.query, 'Web Locks required');
   const token = crypto.randomUUID();
   const peer = window.open(`./lock-peer.html#${token}`, '_blank');
   assert(peer, 'Second tab was blocked; allow popups for localhost and retry');
   const name = `lock-test-${token}-termination.sqlite`;
+  const action = uncommitted ? 'hold-uncommitted' : 'hold-committed';
   let readyResolve, readyReject, holdResolve, holdReject;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   let hold;
@@ -25,7 +34,7 @@ export async function runTerminationChecks(report) {
     if (message.ready) readyResolve();
     else if (message.startupError) readyReject(new Error(message.startupError));
     else if (message.id === 1 && hold) {
-      if (message.holding) holdResolve();
+      if (message.holding === action) holdResolve();
       else holdReject(new Error(`Owner failed to remain open: ${JSON.stringify(message)}`));
     }
   };
@@ -43,9 +52,16 @@ export async function runTerminationChecks(report) {
     assert(committed.length > 0, 'No committed database');
     report(`PASS: committed and closed database before owner-tab test (${committed.length} bytes)`);
     hold = new Promise((resolve, reject) => { holdResolve = resolve; holdReject = reject; });
-    peer.postMessage({ token, id: 1, name, action: 'hold-committed' }, location.origin);
+    peer.postMessage({ token, id: 1, name, action }, location.origin);
     await bounded(hold, 'owner verified database and holding connection');
-    report('PASS: helper tab verified committed rows and holds an open connection and exclusive lock');
+    if (uncommitted) {
+      report('PASS: helper verified uncommitted UPDATE/DELETE/INSERT rows inside an active transaction');
+      report('PASS: pending changes remain in SQLite pager (0 xWrite calls; 0 publications)');
+      assert(equal(await read(name), committed), 'OPFS changed before uncommitted owner was closed');
+      report('PASS: OPFS still contains the exact last committed bytes before owner termination');
+    } else {
+      report('PASS: helper tab verified committed rows and holds an open connection and exclusive lock');
+    }
     let busy = false;
     try { await sqlite_writable_probe(name, false, () => Promise.resolve()); }
     catch (error) {
@@ -85,9 +101,12 @@ export async function runTerminationChecks(report) {
     for (const line of result.split('\n')) report(line);
     assert(equal(await read(name), committed), 'Committed bytes changed after owner termination');
     report('PASS: committed rows and integrity_check survived; published bytes are unchanged');
+    if (uncommitted) report('PASS: uncommitted update, deletion, and insertion were absent after reopening');
     await remove(name);
     created = false;
-    report('PASS: test database removed; no commit was interrupted and no crash-durability claim');
+    report(uncommitted
+      ? 'PASS: test database removed; transaction interrupted before COMMIT, no publication/crash-durability claim'
+      : 'PASS: test database removed; no commit was interrupted and no crash-durability claim');
   } finally {
     peer.close();
     cancellation.abort();

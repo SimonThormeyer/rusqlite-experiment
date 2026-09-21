@@ -1,4 +1,4 @@
-import init, { sqlite_writable_probe, sqlite_readonly_probe, sqlite_hold_committed_probe } from './pkg/jspi_probe.js';
+import init, { sqlite_writable_probe, sqlite_readonly_probe, sqlite_hold_committed_probe, sqlite_hold_uncommitted_probe } from './pkg/jspi_probe.js';
 
 const token = location.hash.slice(1);
 const parent = window.opener;
@@ -20,13 +20,16 @@ try {
       if (action === 'verify') result = await sqlite_writable_probe(name, false, () => Promise.resolve());
       else if (action === 'readonly') result = await sqlite_readonly_probe(name, () => Promise.resolve());
       else if (action === 'invalid-create') result = await sqlite_writable_probe(name, true, () => Promise.resolve());
-      else if (action === 'hold-committed') result = await sqlite_hold_committed_probe(name,
-        () => { throw new Error('Committed owner must not publish'); },
+      else if (action === 'hold-committed' || action === 'hold-uncommitted') {
+        const hold = action === 'hold-uncommitted' ? sqlite_hold_uncommitted_probe : sqlite_hold_committed_probe;
+        result = await hold(name,
+        () => { throw new Error('Holding owner must not publish'); },
         () => {
-          log.textContent += '\nHolding a verified committed database; waiting for this tab to close';
-          send({ id, holding: true });
+          log.textContent += `\n${action}: verified state; waiting for this tab to close`;
+          send({ id, holding: action });
           return new Promise(() => {}); // Intentionally never release via application code.
         });
+      }
       else throw new Error('Unknown command');
       log.textContent += `\n${action}: succeeded`;
       send({ id, result });

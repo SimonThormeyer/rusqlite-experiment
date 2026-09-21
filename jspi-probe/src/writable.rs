@@ -217,14 +217,24 @@ pub fn sqlite_hold_committed_probe(
     before_publish: Function,
     before_close: Function,
 ) -> Result<String, JsValue> {
-    run(name, false, before_publish, Some(before_close))
+    run(name, false, before_publish, Some((before_close, false)))
+}
+
+/// Hold after verifying uncommitted UPDATE/DELETE/INSERT changes in SQLite's pager.
+#[wasm_bindgen(jspi)]
+pub fn sqlite_hold_uncommitted_probe(
+    name: String,
+    before_publish: Function,
+    before_close: Function,
+) -> Result<String, JsValue> {
+    run(name, false, before_publish, Some((before_close, true)))
 }
 
 fn run(
     name: String,
     create: bool,
     before_publish: Function,
-    before_close: Option<Function>,
+    before_close: Option<(Function, bool)>,
 ) -> Result<String, JsValue> {
     let _busy = super::SqliteGuard::enter()?;
     let _database_lock = super::locking::DatabaseLock::acquire(&name)?;
@@ -342,7 +352,35 @@ fn run(
         if create {
             db.execute_batch("BEGIN; DELETE FROM writable;")?;
         }
-        if let Some(gate) = &before_close {
+        if let Some((gate, uncommitted)) = &before_close {
+            if *uncommitted {
+                db.execute_batch(
+                    "BEGIN IMMEDIATE;
+                     UPDATE writable SET payload=x'deadbeef' WHERE id=1;
+                     DELETE FROM writable WHERE id=2;
+                     INSERT INTO writable VALUES(3, x'cafebabe');",
+                )?;
+                let pending: Vec<(i64, Vec<u8>)> = db
+                    .prepare("SELECT id,payload FROM writable ORDER BY id")?
+                    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                    .collect::<rusqlite::Result<_>>()?;
+                if db.is_autocommit()
+                    || pending
+                        != vec![
+                            (1, vec![0xde, 0xad, 0xbe, 0xef]),
+                            (3, vec![0xca, 0xfe, 0xba, 0xbe]),
+                        ]
+                {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                // This small transaction with cache_spill=OFF must remain in the
+                // pager. Do not confuse this test with interruption during xSync.
+                let borrow = data.buffer.borrow();
+                let buffer = borrow.as_ref().ok_or(rusqlite::Error::InvalidQuery)?;
+                if buffer.writes != 0 || buffer.publications != 0 || buffer.dirty {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+            }
             let promise = gate
                 .call0(&JsValue::NULL)
                 .and_then(|value| value.dyn_into::<Promise>())
