@@ -11,6 +11,16 @@ use sqlite_wasm_rs::{
 use std::{cell::RefCell, time::Duration};
 use wasm_bindgen::prelude::*;
 
+#[wasm_bindgen(module = "/publication.js")]
+extern "C" {
+    #[wasm_bindgen(catch, js_name = publishDatabase)]
+    fn publish_database(
+        name: &str,
+        bytes: &js_sys::Uint8Array,
+        hook: &JsValue,
+    ) -> Result<Promise, JsValue>;
+}
+
 const LIMIT: usize = 1024 * 1024;
 fn io_error(code: i32, message: impl Into<String>) -> VfsError {
     VfsError::new(code, message.into())
@@ -26,6 +36,7 @@ struct Buffer {
     failed: bool,
     hook: Function,
     failure: Option<JsValue>,
+    publication_hook: Option<Function>,
     writes: u32,
     publications: u32,
 }
@@ -89,7 +100,17 @@ impl VfsFile for Buffer {
             super::suspend(&promise)?;
             // Replace the entire file, await close, then use a fresh File to verify
             // publication. Never reuse a snapshot invalidated by this write.
-            super::write(&self.name, self.bytes.clone())?;
+            let no_hook = JsValue::UNDEFINED;
+            let hook = self
+                .publication_hook
+                .as_ref()
+                .map(|f| f.as_ref())
+                .unwrap_or(&no_hook);
+            super::suspend(&publish_database(
+                &self.name,
+                &js_sys::Uint8Array::from(self.bytes.as_slice()),
+                hook,
+            )?)?;
             if super::read(&self.name)? != self.bytes {
                 return Err(js_error("publication did not match the buffered bytes"));
             }
@@ -206,7 +227,7 @@ pub fn sqlite_writable_probe(
     create: bool,
     before_publish: Function,
 ) -> Result<String, JsValue> {
-    run(name, create, before_publish, None)
+    run(name, create, before_publish, None, None, "verify-old")
 }
 
 /// Hold an already-committed, verified database open until the test gate resolves.
@@ -217,7 +238,14 @@ pub fn sqlite_hold_committed_probe(
     before_publish: Function,
     before_close: Function,
 ) -> Result<String, JsValue> {
-    run(name, false, before_publish, Some((before_close, false)))
+    run(
+        name,
+        false,
+        before_publish,
+        Some((before_close, false)),
+        None,
+        "verify-old",
+    )
 }
 
 /// Hold after verifying uncommitted UPDATE/DELETE/INSERT changes in SQLite's pager.
@@ -227,7 +255,28 @@ pub fn sqlite_hold_uncommitted_probe(
     before_publish: Function,
     before_close: Function,
 ) -> Result<String, JsValue> {
-    run(name, false, before_publish, Some((before_close, true)))
+    run(
+        name,
+        false,
+        before_publish,
+        Some((before_close, true)),
+        None,
+        "verify-old",
+    )
+}
+
+/// Exercise a real COMMIT with phase gates, or verify either complete database version.
+#[wasm_bindgen(jspi)]
+pub fn sqlite_publication_probe(
+    name: String,
+    operation: String,
+    hook: Function,
+) -> Result<String, JsValue> {
+    if !matches!(operation.as_str(), "mutate" | "verify-old" | "verify-new") {
+        return Err(js_error("unknown publication operation"));
+    }
+    let ready = Function::new_no_args("return Promise.resolve()");
+    run(name, false, ready, None, Some(hook), &operation)
 }
 
 fn run(
@@ -235,6 +284,8 @@ fn run(
     create: bool,
     before_publish: Function,
     before_close: Option<(Function, bool)>,
+    publication_hook: Option<Function>,
+    operation: &str,
 ) -> Result<String, JsValue> {
     let _busy = super::SqliteGuard::enter()?;
     let _database_lock = super::locking::DatabaseLock::acquire(&name)?;
@@ -253,6 +304,7 @@ fn run(
             failed: false,
             hook: before_publish,
             failure: None,
+            publication_hook,
             writes: 0,
             publications: 0,
         })),
@@ -345,8 +397,24 @@ fn run(
             .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?;
         let integrity: String = db.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
-        if rows != vec![(1, vec![0, 255, 128]), (2, vec![90, 195])] || integrity != "ok" {
+        let expected = if operation == "verify-new" {
+            vec![
+                (1, vec![0xde, 0xad, 0xbe, 0xef]),
+                (3, vec![0xca, 0xfe, 0xba, 0xbe]),
+            ]
+        } else {
+            vec![(1, vec![0, 255, 128]), (2, vec![90, 195])]
+        };
+        if rows != expected || integrity != "ok" {
             return Err(rusqlite::Error::InvalidQuery);
+        }
+        if operation == "mutate" {
+            db.execute_batch(
+                "BEGIN IMMEDIATE;
+                UPDATE writable SET payload=x'deadbeef' WHERE id=1;
+                DELETE FROM writable WHERE id=2;
+                INSERT INTO writable VALUES(3,x'cafebabe'); COMMIT;",
+            )?;
         }
         // Dropping an uncommitted transaction must not publish its changes.
         if create {

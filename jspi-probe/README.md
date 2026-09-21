@@ -385,6 +385,70 @@ Two browser runs passed. This check interrupts an active transaction
 dirty VFS buffer recovery, a partially written OPFS stream, an interrupted close,
 journal recovery, or browser-process crash durability.
 
+## Publication interruption and recovery check
+
+Click **Run publication recovery checks** and allow the helper tab. Run twice
+and report the entire output. Also rerun **Run writable SQLite checks**, since
+normal `xSync` now uses the same publication routine as this suite.
+
+This combines the next four investigations into one stage: dirty VFS buffers,
+interrupted publication, publication failures, and recovery design. The suite
+passed twice, followed by two successful writable regression runs.
+The WASM release build, JavaScript syntax checks, Rust formatting, and seven Node
+tests (three lock tests and four publication-orchestration tests) pass. The
+publication unit tests use modeled storage; only the browser run tests OPFS.
+The first browser attempt passed the reference COMMIT but failed the
+write-after-abort assertion. That assertion incorrectly required a truthy
+rejection cause: abort without a reason can yield an `undefined` rejection,
+reproduced with Node's WritableStream in a regression test. The corrected check
+requires a captured rejection, SQLite code 1034, an own `cause` property, and
+identical rejection values, including `undefined`. Two browser reruns passed;
+failure diagnostics also report each of those conditions separately.
+
+The suite first saves exact old/new reference database bytes around a successful
+UPDATE/DELETE/INSERT transaction. Every interrupted COMMIT is paused inside
+`xSync`, after SQLite has called `xWrite`, at one of six boundaries:
+
+| Boundary | Expected reopened contents |
+| --- | --- |
+| Before opening the writable stream | Exact old database |
+| After opening the stream | Exact old database |
+| After writing half the buffered bytes | Exact old database |
+| After writing/truncating all bytes, before close | Exact old database |
+| Immediately after initiating close | Complete old or complete new database |
+| After close resolves, before SQLite receives success | Exact new database |
+
+The helper navigates to a fresh document/WASM instance between cases and closes
+on the final case. The controller first verifies a contender receives
+`SQLITE_BUSY`, queues a Web Lock waiter, and then destroys the owner without
+resolving its gate or asking Rust to roll back. It requires lock handoff, exact
+reference bytes, expected SQL rows, `integrity_check`, read-only verification,
+and a subsequent successful publication whenever the old version survived.
+The close-started case races the browser's close operation; it does not prove
+termination occurred while the underlying close was still in progress.
+
+The same suite exercises real browser rejections of write, truncate, and close
+on an explicitly aborted stream. These are invalid-stream failures, not disk
+faults during otherwise valid operations. An injected `QuotaExceededError`
+checks error propagation without consuming storage quota. Each must
+produce `SQLITE_IOERR_FSYNC` with the original cause, preserve old bytes, release
+ownership, and allow a fresh connection to commit successfully. A rejection
+injected after successful close must instead retain the new complete database:
+a COMMIT error can have an ambiguous outcome once publication has happened.
+
+`publication.js` is shared by normal writable probes and this suite. It replaces
+the whole file with two sequential writes, truncates to the buffered length,
+awaits close, and aborts on failure where possible. Rust then compares a fresh
+read with the buffer. Hooks only provide observation/fault boundaries; normal
+calls use no-op hooks. The memory rollback journal and 1 MiB limit are unchanged.
+
+The combined stage is not complete merely because this suite passes. Actual
+quota exhaustion, browser-process crash behavior, and any required persistent
+journal/recovery protocol still need investigation. Tab/document lifecycle
+results cannot establish power-loss durability. We will use the observed
+publication outcomes to choose the next recovery implementation rather than
+assume an atomic or durable SQLite commit from OPFS close alone.
+
 ## Browser verification
 
 All original storage checks passed on 2026-09-21 in **Firefox 156.0 (aarch64)**
@@ -595,8 +659,53 @@ PASS: test database removed; transaction interrupted before COMMIT, no publicati
 
 The committed database remained byte-for-byte unchanged, and reopening recovered
 the original rows after tab teardown discarded the uncommitted pager state.
-This verifies interruption before COMMIT and before any VFS write. Dirty VFS
-buffer interruption and interruption during OPFS publication remain untested.
+This verifies interruption before COMMIT and before any VFS write. The subsequent
+publication suite below exercises dirty VFS buffers and stream staging.
+
+### Publication interruption and recovery results
+
+The publication suite passed **twice**, followed by **two successful writable
+SQLite regression runs**. Publication results:
+
+```text
+PASS: all publication interruption and recovery checks completed
+PASS: reference COMMIT produced a distinct complete database with expected rows and integrity_check
+PASS: write-after-abort: SQLITE_IOERR_FSYNC preserved cause; complete old database reopened; lock and connection recovered
+PASS: truncate-after-abort: SQLITE_IOERR_FSYNC preserved cause; complete old database reopened; lock and connection recovered
+PASS: close-after-abort: SQLITE_IOERR_FSYNC preserved cause; complete old database reopened; lock and connection recovered
+PASS: synthetic-quota: SQLITE_IOERR_FSYNC preserved cause; complete old database reopened; lock and connection recovered
+PASS: after-close-rejection: SQLITE_IOERR_FSYNC preserved cause; complete new database reopened; lock and connection recovered
+PASS: before-open: owner terminated, lock reacquired, complete old bytes and rows verified; integrity_check and recovery succeeded
+PASS: after-open: owner terminated, lock reacquired, complete old bytes and rows verified; integrity_check and recovery succeeded
+PASS: after-half-write: owner terminated, lock reacquired, complete old bytes and rows verified; integrity_check and recovery succeeded
+PASS: before-close: owner terminated, lock reacquired, complete old bytes and rows verified; integrity_check and recovery succeeded
+PASS: close-started: owner terminated, lock reacquired, complete new bytes and rows verified; integrity_check and recovery succeeded
+PASS: after-close: owner terminated, lock reacquired, complete new bytes and rows verified; integrity_check and recovery succeeded
+PASS: test database removed; post-close errors can leave a committed result despite COMMIT rejection
+SCOPE: close-started races completion; synthetic quota is not exhaustion; document/tab teardown is not process crash or power loss; persistent recovery design remains open
+```
+
+The writable regression output was:
+
+```text
+PASS: all writable SQLite checks completed
+PASS: direct xWrite/xRead saw pending bytes; xSync published them; xTruncate published an empty file
+PASS: SQL commits, rollback, and close with an uncommitted transaction and integrity_check (7 xWrite calls; 5 publications)
+PASS: xSync suspended with event-loop progress (13 ticks); overlapping SQLite probe rejected
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: reopening discarded buffered state; committed rows survived and uncommitted deletion did not
+PASS: SQL publication rejection mapped to SQLITE_IOERR_FSYNC; pre-publication contents unchanged
+PASS: fresh VFS/connection recovered after injected publication failure
+PASS: test files removed; memory journal only, no crash-durability claim
+```
+
+Before close, the tested interruptions preserved the exact old database. Both
+close-started and after-close cases retained the exact new database. The
+close-started observation does not establish that close was still pending when
+the owner was destroyed. Rejection after successful close retained the new
+database despite the SQLite error, demonstrating why callers must treat such a
+COMMIT result as ambiguous. Actual quota exhaustion, process-crash behavior, and
+the persistent recovery design remain open within the combined stage.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,

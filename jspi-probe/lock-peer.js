@@ -1,4 +1,4 @@
-import init, { sqlite_writable_probe, sqlite_readonly_probe, sqlite_hold_committed_probe, sqlite_hold_uncommitted_probe } from './pkg/jspi_probe.js';
+import init, { sqlite_writable_probe, sqlite_readonly_probe, sqlite_hold_committed_probe, sqlite_hold_uncommitted_probe, sqlite_publication_probe } from './pkg/jspi_probe.js';
 
 const token = location.hash.slice(1);
 const parent = window.opener;
@@ -11,13 +11,20 @@ try {
   if (!navigator.locks?.request) throw new Error('Web Locks unavailable');
   window.addEventListener('message', async event => {
     if (event.source !== parent || event.origin !== location.origin || event.data?.token !== token) return;
-    const { id, name, action } = event.data;
+    const { id, name, action, phase } = event.data;
     if (!Number.isInteger(id) || !name?.startsWith(`lock-test-${token}`)) return;
     if (running) { send({ id, error: { message: 'Peer command already running' } }); return; }
     running = true;
     try {
       let result;
-      if (action === 'verify') result = await sqlite_writable_probe(name, false, () => Promise.resolve());
+      if (action === 'publication') {
+        result = await sqlite_publication_probe(name, 'mutate', async stage => {
+          if (stage !== phase) return;
+          send({ id, holding: phase });
+          return new Promise(() => {});
+        });
+      }
+      else if (action === 'verify') result = await sqlite_writable_probe(name, false, () => Promise.resolve());
       else if (action === 'readonly') result = await sqlite_readonly_probe(name, () => Promise.resolve());
       else if (action === 'invalid-create') result = await sqlite_writable_probe(name, true, () => Promise.resolve());
       else if (action === 'hold-committed' || action === 'hold-uncommitted') {

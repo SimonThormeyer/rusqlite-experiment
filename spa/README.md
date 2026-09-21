@@ -30,6 +30,10 @@ The standalone owner-tab termination check also passed twice in browser tests.
 A follow-up check interrupting an uncommitted transaction before COMMIT or any
 VFS write also passed twice; the application remains unchanged.
 This SPA still uses IndexedDB.
+The standalone publication interruption and recovery suite passed twice, followed
+by two successful writable regression runs. Recovery design, actual quota
+exhaustion, and process-crash checks remain open; SPA integration follows that
+investigation.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,

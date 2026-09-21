@@ -26,6 +26,9 @@ The owner-tab termination check also passed twice in browser tests.
 A controlled uncommitted-transaction interruption check also passed twice, with
 the owner paused before COMMIT or any VFS write.
 Crash-safe storage and SPA integration are not implemented.
+The combined publication-interruption and recovery suite passed twice, followed
+by two successful writable regression runs. It covers dirty buffers, staged stream writes,
+close boundaries, rejected operations, and reopening complete database versions.
 
 ### Proposed architecture
 
@@ -63,7 +66,9 @@ verified in two successful runs. Writable failure recovery with locking enabled
 also passed twice. Automatic lock release when the owning tab closes is
 verified in two successful runs. Closing an owner during an uncommitted
 transaction before COMMIT or any VFS write also passed twice. Interruption with
-buffered VFS writes, persistent journaling, and stages 4–6 remain future work. The
+buffered VFS writes and staged publication now passed twice in the combined suite.
+Actual quota exhaustion, process-crash recovery, persistent recovery design, and
+stages 4–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB
@@ -98,6 +103,16 @@ original storage probe's repeatability and other browsers remain unverified.
    choosing the same database name does not move IndexedDB data into OPFS.
 
 ### Requirements to validate for the new approach
+
+The remaining VFS investigation combines buffered-write interruption, interruption
+during OPFS publication, publication failures, and recovery design into one stage.
+The [publication recovery suite](jspi-probe/README.md#publication-interruption-and-recovery-check)
+provides the next evidence. Its results will guide whether persistent journaling
+or another recovery protocol is necessary. Actual quota exhaustion and
+browser-process termination remain separate follow-ups within this stage;
+simulated failures and document teardown do not establish power-loss durability.
+Then come the supported-VFS-contract audit, SPA integration, encryption checks,
+and browser/performance evaluation described above.
 
 wasm-bindgen's JSPI support is experimental. Use a JSPI-capable browser and HTTPS
 or localhost for OPFS; consult the linked guide's runtime table when selecting

@@ -36,6 +36,10 @@ for its lock, then closes the helper and verifies the database in this tab.</p>
 <p>Uncommitted transaction check: close the helper after it verifies pending row
 changes, before COMMIT, then check that only the last committed data survives.</p>
 <button id="uncommitted-close" disabled>Run uncommitted interruption checks</button>
+<p>Publication recovery: interrupt COMMIT at six storage boundaries, test rejected
+stream operations, and verify complete database versions after reacquiring ownership.
+A helper tab reloads between cases and closes at the end.</p>
+<button id="publication" disabled>Run publication recovery checks</button>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>
 <script type="module" src="./main.js"></script>
