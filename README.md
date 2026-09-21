@@ -10,10 +10,12 @@ Rust application in the page's WASM instance, allowing synchronous SQLite VFS
 callbacks to reach Promise-based storage operations without the worker message
 facade used in the earlier `sahpool` experiment.
 
-This is a staged investigation. **Only the documentation has been updated so far.**
+This is a staged investigation. A [standalone JSPI/OPFS probe](jspi-probe/README.md)
+now builds and passed all checks in a Firefox 156.0 (aarch64) session.
+See the [recorded results](jspi-probe/README.md#browser-verification).
 The current code still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
 `multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
-JSPI support, the replacement VFS, and SPA integration are not implemented.
+The replacement SQLite VFS and SPA integration are not implemented.
 
 ### Proposed architecture
 
@@ -39,11 +41,12 @@ sync requirements. Whether this approach improves performance remains unmeasured
 ### Incremental plan
 
 Each stage should produce a reviewable result before moving to the next. This
-documentation update completes stage 1; later stages are future work.
+documentation and standalone feasibility stages are complete. Stages 3–6 remain
+future work; repeatability and other browsers have not yet been verified.
 
-1. **Document the direction (this change).** Separate the running IndexedDB
+1. **Document the direction (complete).** Separate the running IndexedDB
    baseline and historical findings from the proposed JSPI experiment.
-2. **Prove JSPI and OPFS access.** Build a minimal page-context Rust/WASM probe,
+2. **Prove JSPI and OPFS access (complete in Firefox 156.0).** Build a minimal page-context Rust/WASM probe,
    independent of SQLite. Choose and record compatible wasm-bindgen crates and
    CLI versions; the existing dependency versions are not a validated JSPI setup.
    Verify binary write/read, reopen after reload, deletion, and rejected storage
@@ -81,9 +84,9 @@ cannot be combined with WASM threads/shared memory in this toolchain. Build
 post-processing must accept exception-handling instructions; the upstream OPFS
 example disables wasm-pack's release `wasm-opt` step.
 
-These are requirements for the future probe, not changes already made to this
-repository's build. Unsupported environments should eventually receive a clear
-startup error; a fallback backend is not part of the initial probe. JSPI yields
+The standalone probe pins its own dependencies and disables release `wasm-opt`;
+the application's build remains unchanged. The probe reports a startup error
+for unsupported environments; a fallback backend is not part of it. JSPI yields
 during storage waits, but CPU-bound SQLite work on the page can still affect UI
 responsiveness.
 

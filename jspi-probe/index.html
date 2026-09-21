@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSPI + OPFS probe</title>
+<style>
+  body { font: 17px/1.5 system-ui, sans-serif; max-width: 50rem; margin: 3rem auto; padding: 0 1rem; }
+  button { font: inherit; padding: .5rem 1rem; }
+  pre { white-space: pre-wrap; background: #eee; padding: 1rem; }
+</style>
+<h1>JSPI + OPFS probe</h1>
+<p>Binary file access from synchronous Rust in this page. The check writes a test
+file, reloads this page to verify persistence, then deletes it. No SQLite yet.</p>
+<button id="run" disabled>Run checks (reloads page)</button>
+<p id="status" role="status">Loading…</p>
+<pre id="log"></pre>
+<script type="module" src="./main.js"></script>
+</html>

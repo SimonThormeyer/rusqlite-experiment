@@ -60,3 +60,10 @@ $(SPA_ZIP): $(SPA_FILES)
 
 .PHONY: spa-zip
 spa-zip: $(SPA_ZIP) ## zip up the spa portion of the app with ffi.d.ts
+
+.PHONY: jspi-probe serve-jspi-probe
+jspi-probe: ## build the standalone JSPI/OPFS probe
+	wasm-pack build jspi-probe --target web --release --locked
+
+serve-jspi-probe: jspi-probe ## serve the standalone probe on localhost:8081
+	miniserve --interfaces 127.0.0.1 --port 8081 --index index.html jspi-probe

@@ -12,9 +12,11 @@ The SPA currently calls the Rust/WASM bindings directly and stores its database
 using the `multipleciphers-relaxed-idb` VFS. It does not yet use JSPI or OPFS.
 
 The next experiment will use a JSPI-backed OPFS VFS in the page's WASM instance.
-The staged plan and upstream references are in the [project README](../README.md#incremental-plan).
+The staged plan and upstream references are in the [project
+README](../README.md#incremental-plan).
 First comes a standalone storage probe, then a minimal SQLite integration; the
-SPA will be adapted only after those work. This change updates documentation only.
+SPA will be adapted only after those work. The [standalone probe](../jspi-probe/README.md)
+passed all checks in a Firefox 156.0 (aarch64) session; the SPA is unchanged.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,
@@ -33,8 +35,8 @@ not automatically appear in OPFS; migration is a separate decision.
 
 From the repository root, run `make serve-spa`, then open
 `http://localhost:8080`. See [setup requirements](../README.md#setup).
-This still builds and serves the IndexedDB baseline; there is no JSPI build
-target yet.
+This still builds and serves the IndexedDB baseline. Use `make serve-jspi-probe`
+for the separate JSPI probe.
 
 ## Files
 
@@ -52,4 +54,5 @@ target yet.
 - `ffi_bg.wasm`: compiled Rust and embedded SQLite; copied into the served output
 
 The Makefile generates these artifacts with `wasm-pack --target web` and bundles
-the SPA with Bun. Any JSPI toolchain or build-setting changes are future work.
+the SPA with Bun. JSPI toolchain and build settings currently apply only to the
+separate probe; adapting this SPA remains future work.

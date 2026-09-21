@@ -1,0 +1,25 @@
+[package]
+name = "jspi-probe"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Keep the probe's toolchain and lockfile independent of the SQLite baseline.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.128"
+js-sys = "=0.3.105"
+web-sys = { version = "=0.3.105", features = [
+    "Window", "Navigator", "StorageManager", "Blob", "File",
+    "FileSystemDirectoryHandle", "FileSystemGetDirectoryOptions",
+    "FileSystemFileHandle", "FileSystemGetFileOptions",
+    "FileSystemWritableFileStream", "WritableStream",
+] }
+
+# The JSPI glue uses exception-handling instructions.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
