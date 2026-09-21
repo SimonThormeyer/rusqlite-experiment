@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JSPI encryption checks</title>
+<style>body{font:17px/1.5 system-ui;max-width:60rem;margin:3rem auto;padding:0 1rem}button{font:inherit;padding:.5rem}pre{white-space:pre-wrap;background:#eee;padding:1rem}</style>
+<h1>JSPI encryption checks</h1>
+<p>Separate experimental build using SQLite3 Multiple Ciphers and the existing OPFS VFS.
+Uses disposable files and public test keys. Do not enter real passwords here.</p>
+<p>Checks encrypted creation, reads/writes, key changes, encrypted snapshots, failure recovery,
+and reload. In-place plaintext conversion and key removal are expected to be rejected by the current VFS contract.</p>
+<button id="run" disabled>Run encryption checks (reloads page)</button>
+<p id="status" role="status">Loading encryption build…</p>
+<pre id="log"></pre>
+<p><a href="./">Back to probes</a></p>
+<script type="module" src="./encryption-checks.js"></script>
+</html>

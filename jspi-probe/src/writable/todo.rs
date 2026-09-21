@@ -1,5 +1,7 @@
 //! First application slice: shared TODO schema/model on the audited VFS.
 use super::*;
+#[cfg(feature = "encryption")]
+mod encryption;
 use std::{
     future::Future,
     task::{Context, Poll, Waker},
@@ -34,6 +36,17 @@ fn database<T>(
     name: String,
     create: bool,
     hook: Function,
+    work: impl FnOnce(&mut Connection) -> Result<T, JsValue>,
+) -> Result<T, JsValue> {
+    database_inner(name, create, hook, false, None, work)
+}
+
+fn database_inner<T>(
+    name: String,
+    create: bool,
+    hook: Function,
+    _cipher: bool,
+    _key: Option<&str>,
     work: impl FnOnce(&mut Connection) -> Result<T, JsValue>,
 ) -> Result<T, JsValue> {
     let _busy = super::super::SqliteGuard::enter()?;
@@ -79,12 +92,27 @@ fn database<T>(
         return Err(js_error("TODO VFS registration failed"));
     }
     let _registration = Registration(vfs);
+    #[cfg(feature = "encryption")]
+    let _codec = if _cipher {
+        Some(encryption::CodecVfs::register()?)
+    } else {
+        None
+    };
+    let vfs_name = if _cipher {
+        "multipleciphers-jspi-todo-slice"
+    } else {
+        "jspi-todo-slice"
+    };
     let mut db = Connection::open_with_flags_and_vfs(
         &name,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        "jspi-todo-slice",
+        vfs_name,
     )
     .map_err(sql)?;
+    #[cfg(feature = "encryption")]
+    if _cipher {
+        encryption::set_read_key(&db, _key)?;
+    }
     configure_connection(&db).map_err(sql)?;
     db.execute_batch("PRAGMA foreign_keys=ON;").map_err(sql)?;
     let result = work(&mut db);

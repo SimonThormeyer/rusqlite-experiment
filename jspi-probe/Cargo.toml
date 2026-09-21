@@ -10,6 +10,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+encryption = ["sqlite-wasm-rs/sqlite3mc"]
+
 [dependencies]
 todo-list = { path = "../todo-list", default-features = false }
 rusqlite = "=0.38.0"

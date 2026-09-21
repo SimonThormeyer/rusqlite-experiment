@@ -67,3 +67,7 @@ jspi-probe: ## build the standalone JSPI/OPFS probe
 
 serve-jspi-probe: jspi-probe ## serve the standalone probe on localhost:8081
 	miniserve --interfaces 127.0.0.1 --port 8081 --index index.html jspi-probe
+
+.PHONY: jspi-encryption
+jspi-encryption: ## build the isolated Multiple Ciphers probe package
+	wasm-pack build jspi-probe --target web --release --out-dir pkg-encryption --locked --features encryption

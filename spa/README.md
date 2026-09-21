@@ -1,5 +1,15 @@
 # Rusqlite Experiment SPA
 
+Encryption validation now precedes SPA integration. The
+[isolated encryption probe](../jspi-probe/ENCRYPTION.md) adds encrypted
+creation, key changes,
+ciphertext export, and recovery checks; the encryption sequence passed twice.
+The post-change TODO/export regressions passed.
+Encrypted databases will be created encrypted and remain
+encrypted permanently. Plaintext conversion and removing encryption are out of
+scope; changing a key remains supported. The validated encryption boundary is
+sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+
 A single-page app designed to showcase the use case where:
 
 - A Rust crate embeds Sqlite via Rusqlite and presents a storage interface

@@ -1,5 +1,15 @@
 # Rusqlite Experiment
 
+Encryption validation now precedes SPA integration. The
+[isolated encryption probe](jspi-probe/ENCRYPTION.md) adds encrypted creation,
+key changes,
+ciphertext export, and recovery checks; the encryption sequence passed twice.
+The post-change TODO/export regressions passed.
+Encrypted databases will be created encrypted and remain
+encrypted permanently. Plaintext conversion and removing encryption are out of
+scope; changing a key remains supported. The validated encryption boundary is
+sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+
 How far can we get writing a TODO application that works both on the command line and the internet, backed by Rusqlite?
 
 ## Direction and current status
@@ -127,8 +137,11 @@ original storage probe's repeatability and other browsers remain unverified.
    reload, error recovery, and a consistent database download.
 5. **Re-run the encryption experiment.** Establish how SQLite3 Multiple Ciphers
    wraps the new VFS instead of assuming the old VFS name or utility API applies.
-   Test encrypting, reopening with correct/incorrect keys, changing/removing keys,
-   and exporting. Record compatibility findings separately from the old backend.
+   Test encrypted creation, reopening with correct/incorrect keys, changing keys,
+   and ciphertext export. Encrypted databases remain encrypted permanently;
+   plaintext conversion and removing encryption are excluded. These boundary
+   checks passed; application integration remains. Record compatibility findings
+   separately from the old backend.
 6. **Evaluate and document the result.** Add browser regression coverage and
    compare correctness, responsiveness, and measured performance with the baseline.
    Record supported browsers, remaining limitations, and a decision on replacing

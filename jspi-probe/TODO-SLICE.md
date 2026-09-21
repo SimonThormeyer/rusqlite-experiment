@@ -1,5 +1,14 @@
 # First TODO application slice
 
+Encryption validation now precedes SPA integration. The
+[isolated encryption probe](ENCRYPTION.md) adds encrypted creation, key changes,
+ciphertext export, and recovery checks; the encryption sequence passed twice.
+The post-change TODO/export regressions passed.
+Encrypted databases will be created encrypted and remain
+encrypted permanently. Plaintext conversion and removing encryption are out of
+scope; changing a key remains supported. The validated encryption boundary is
+sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+
 Open [todo-slice.html](http://localhost:8081/todo-slice.html) on the same origin as
 your probe server (use `127.0.0.1` instead if that is your current origin).
 This page is the first unencrypted application slice, not a replacement for the
