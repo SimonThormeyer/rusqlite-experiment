@@ -15,6 +15,9 @@ file, reloads this page to verify persistence, then deletes it.</p>
 <p>The next check suspends inside SQLite's file-open callback and reads an OPFS
 marker before running SQL. The database itself stays in memory.</p>
 <button id="sqlite" disabled>Run SQLite callback checks</button>
+<p>Read-only database check: copy a known fixture into OPFS, query its pages through
+SQLite's suspending read callback, then remove the copy.</p>
+<button id="readonly" disabled>Run OPFS read-only checks</button>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>
 <script type="module" src="./main.js"></script>

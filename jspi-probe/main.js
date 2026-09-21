@@ -1,8 +1,11 @@
 import init, { write, read, _delete as remove, wait_for } from './pkg/jspi_probe.js';
 import { runSqliteChecks } from './sqlite-checks.js';
+import { runReadonlyChecks } from './readonly-checks.js';
 
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
+const readonlyButton = document.querySelector('#readonly');
+const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -25,13 +28,11 @@ function fail(error) {
   status.textContent = `FAIL: ${error.message ?? error}`;
   status.dataset.result = 'fail';
   report(error.stack ?? String(error));
-  button.disabled = false;
-  sqliteButton.disabled = false;
+  setBusy(false);
 }
 
 async function start() {
-  button.disabled = true;
-  sqliteButton.disabled = true;
+  setBusy(true);
   status.dataset.result = 'running';
   status.textContent = 'Checking storage and suspension…';
   lines = [];
@@ -79,26 +80,25 @@ async function finish(saved) {
   sessionStorage.removeItem(checkpoint);
   status.textContent = 'PASS: all checks completed';
   status.dataset.result = 'pass';
-  button.disabled = false;
-  sqliteButton.disabled = false;
+  setBusy(false);
 }
 
 button.addEventListener('click', () => start().catch(fail));
-sqliteButton.addEventListener('click', async () => {
-  button.disabled = true;
-  sqliteButton.disabled = true;
+async function runAdditionalChecks(checks, label) {
+  setBusy(true);
   lines = [];
   log.textContent = '';
-  status.textContent = 'Checking the SQLite callback boundary…';
+  status.textContent = `Checking ${label}…`;
   status.dataset.result = 'running';
   try {
-    await runSqliteChecks(report);
-    status.textContent = 'PASS: all SQLite callback checks completed';
+    await checks(report);
+    status.textContent = `PASS: all ${label} checks completed`;
     status.dataset.result = 'pass';
-    button.disabled = false;
-    sqliteButton.disabled = false;
+    setBusy(false);
   } catch (error) { fail(error); }
-});
+}
+sqliteButton.addEventListener('click', () => runAdditionalChecks(runSqliteChecks, 'SQLite callback'));
+readonlyButton.addEventListener('click', () => runAdditionalChecks(runReadonlyChecks, 'OPFS read-only'));
 try {
   assert(isSecureContext && navigator.storage?.getDirectory, 'OPFS requires HTTPS or localhost');
   assert(typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function',
@@ -109,7 +109,6 @@ try {
   else {
     status.textContent = 'Ready';
     status.dataset.result = 'ready';
-    button.disabled = false;
-    sqliteButton.disabled = false;
+    setBusy(false);
   }
 } catch (error) { fail(error); }

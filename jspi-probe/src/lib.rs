@@ -2,7 +2,29 @@
 // JSPI is experimental in the pinned wasm-bindgen release.
 #![allow(deprecated)]
 
+mod readonly;
 mod sqlite;
+
+thread_local! {
+    static SQLITE_BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+struct SqliteGuard;
+
+impl SqliteGuard {
+    fn enter() -> Result<Self, JsValue> {
+        if SQLITE_BUSY.with(|busy| busy.replace(true)) {
+            return Err(js_sys::Error::new("SQLite probe already running").into());
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for SqliteGuard {
+    fn drop(&mut self) {
+        SQLITE_BUSY.with(|busy| busy.set(false));
+    }
+}
 
 use js_sys::{Promise, Uint8Array, futures::jspi_block_on_promise as suspend};
 use wasm_bindgen::prelude::*;

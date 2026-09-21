@@ -104,6 +104,7 @@ fn js_error(error: impl std::fmt::Display) -> JsValue {
 /// Returns the number of successfully resumed xOpen callbacks (expected: one).
 #[wasm_bindgen(jspi)]
 pub fn sqlite_callback_probe(gate: Promise, marker: String) -> Result<u32, JsValue> {
+    let _busy = super::SqliteGuard::enter()?;
     if ACTIVE.with(|active| active.borrow().is_some()) {
         return Err(js_error("SQLite probe already running"));
     }

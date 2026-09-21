@@ -18,6 +18,8 @@ First comes a standalone storage probe, then a minimal SQLite integration; the
 SPA will be adapted only after those work. The [standalone probe](../jspi-probe/README.md)
 passed its storage checks in a Firefox 156.0 (aarch64) session. A new
 SQLite callback check also passed twice in browser tests; the SPA is unchanged.
+A read-only OPFS `xRead` probe also passed twice in browser tests, separate
+from this application's build and storage.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,
