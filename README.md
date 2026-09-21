@@ -1,8 +1,95 @@
-# Ruqslite Experiment
+# Rusqlite Experiment
 
 How far can we get writing a TODO application that works both on the command line and the internet, backed by Rusqlite?
 
-## Running the experiment
+## Direction and current status
+
+We plan to re-create the browser experiment with an OPFS-backed SQLite VFS using
+wasm-bindgen's JS Promise Integration (JSPI). The aim is to keep SQLite and the
+Rust application in the page's WASM instance, allowing synchronous SQLite VFS
+callbacks to reach Promise-based storage operations without the worker message
+facade used in the earlier `sahpool` experiment.
+
+This is a staged investigation. **Only the documentation has been updated so far.**
+The current code still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
+`multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
+JSPI support, the replacement VFS, and SPA integration are not implemented.
+
+### Proposed architecture
+
+```text
+SPA -> Promise-returning WASM entry point
+    -> Rust application / rusqlite / embedded SQLite
+    -> synchronous VFS callback -> JSPI suspension -> Promise-based OPFS operation
+```
+
+The starting references are the [wasm-bindgen JSPI guide](https://wasm-bindgen.github.io/wasm-bindgen/reference/jspi.html)
+and its [JSPI + OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html).
+JSPI exports return Promises to JavaScript; synchronous Rust callees can suspend
+through `jspi_block_on_promise` or a suspending import. This requires a JSPI entry
+boundary; making an export `async` alone does not establish one. Suspension lets
+the event loop run, so shared state must be protected against reentrant access.
+
+The OPFS example demonstrates file operations, not a SQLite VFS. Our experiment
+must establish byte-oriented random access, journaling, locking, and persistence
+semantics before treating it as a database backend. In particular, a writable
+stream's write/close behavior must be reconciled with SQLite's visibility and
+sync requirements. Whether this approach improves performance remains unmeasured.
+
+### Incremental plan
+
+Each stage should produce a reviewable result before moving to the next. This
+documentation update completes stage 1; later stages are future work.
+
+1. **Document the direction (this change).** Separate the running IndexedDB
+   baseline and historical findings from the proposed JSPI experiment.
+2. **Prove JSPI and OPFS access.** Build a minimal page-context Rust/WASM probe,
+   independent of SQLite. Choose and record compatible wasm-bindgen crates and
+   CLI versions; the existing dependency versions are not a validated JSPI setup.
+   Verify binary write/read, reopen after reload, deletion, and rejected storage
+   operations. Demonstrate event-loop progress during suspension.
+3. **Prove the SQLite VFS boundary.** Choose whether to adapt an existing VFS or
+   implement one, and verify suspension through the actual rusqlite/SQLite callback
+   path. Start with one unencrypted connection and a documented journal mode.
+   Define open/read/write/truncate/size/sync/delete behavior, short reads, and
+   mapping storage failures to SQLite errors. Establish a locking strategy that
+   rejects unsupported concurrent access, including another tab. Do not assume
+   WAL or multiple connections work. Verify transactions, rollback, and reopen
+   persistence, and investigate interrupted writes before claiming durability.
+4. **Connect the TODO application.** Preserve the shared model and native CLI.
+   Audit every browser path that can perform storage I/O, including initialization,
+   schema application, export, encryption inspection, and connection cleanup.
+   Make the necessary entry points suspendable, update the SPA to await them,
+   and serialize operations on each connection across suspension. Verify CRUD,
+   reload, error recovery, and a consistent database download.
+5. **Re-run the encryption experiment.** Establish how SQLite3 Multiple Ciphers
+   wraps the new VFS instead of assuming the old VFS name or utility API applies.
+   Test encrypting, reopening with correct/incorrect keys, changing/removing keys,
+   and exporting. Record compatibility findings separately from the old backend.
+6. **Evaluate and document the result.** Add browser regression coverage and
+   compare correctness, responsiveness, and measured performance with the baseline.
+   Record supported browsers, remaining limitations, and a decision on replacing
+   IndexedDB. Decide separately whether existing browser data needs migration;
+   choosing the same database name does not move IndexedDB data into OPFS.
+
+### Requirements to validate for the new approach
+
+wasm-bindgen's JSPI support is experimental. Use a JSPI-capable browser and HTTPS
+or localhost for OPFS; consult the linked guide's runtime table when selecting
+test browsers. JSPI requires reference types and exception-handling support and
+cannot be combined with WASM threads/shared memory in this toolchain. Build
+post-processing must accept exception-handling instructions; the upstream OPFS
+example disables wasm-pack's release `wasm-opt` step.
+
+These are requirements for the future probe, not changes already made to this
+repository's build. Unsupported environments should eventually receive a clear
+startup error; a fallback backend is not part of the initial probe. JSPI yields
+during storage waits, but CPU-bound SQLite work on the page can still affect UI
+responsiveness.
+
+## Running the current experiment
+
+These commands run the existing IndexedDB implementation, not the planned JSPI VFS.
 
 ### Native
 
@@ -33,6 +120,7 @@ Options:
 
 - `rustup target add wasm32-unknown-unknown`
 - install `wasm-bindgen-cli`
+- install `wasm-pack`, Bun, and `miniserve` (used by the Makefile)
 
 #### Build
 
@@ -40,7 +128,10 @@ Options:
 make serve-spa
 ```
 
-## Notes and Findings
+## Baseline notes and historical findings
+
+These observations concern the existing IndexedDB implementation and the earlier
+worker-based OPFS experiment. They are not results for the planned JSPI VFS.
 
 ### WASM/Browser Interop
 
@@ -51,11 +142,14 @@ make serve-spa
 
 Rusqlite has Cargo features for sqlcipher but not for Sqlite3 Multiple Ciphers (sqlite3-mc).
 
-- Current approach: sqlite3-mc on WASM, sqlcipher on native
+- Browser implementation: sqlite3-mc on WASM; the native cipher compatibility
+  trial below used the SQLCipher command-line tool
 - Unencrypted databases start with `b"SQLite format 3\0"` in their first 16 bytes
 
-Note that working purely on the command line, despite advertising sqlcipher compatibility and using sqlcipher-style encryption,
-the two technologies are not actually compatible. So we should not expect to ever be able to use a web CC DB in a non-wasm context.
+In the command-line trial below, SQLite3 Multiple Ciphers and SQLCipher could not
+read the same encrypted database with the tested settings. This records a result
+for those versions and settings, not proof that interoperability is impossible.
+The new VFS does not by itself resolve cipher-format compatibility.
 
 ```sh
 $ sqlcipher --version
@@ -109,24 +203,33 @@ See the [demo](#demo) to see this in action.
 
 #### Sqlcipher Incompatibility
 
-sqlite3mc and sqlcipher are [not actually compatible](#encryption-compatibility). Happily, we don't have a real use case for ever moving a CC database from one device to another, so this should be fine. But in any case, this frees us to experiment among other potential encryption schemes to see if any of them work better.
+sqlite3mc and sqlcipher did not interoperate in the [recorded compatibility trial](#encryption-compatibility).
+Cross-device encrypted database portability is not an initial goal of the JSPI
+experiment; compatibility must be tested if that becomes a requirement.
 
 But more than that, sqlite3mc on wasm appears to be incompatible with _itself_ when using sqlcipher compat mode. This took quite a lot of debugging to determine. Ultimately the solution is simple: use the default ciphering (or possibly some alternatives do work; not tested). At that point everything works as expected.
 
-### `sahpool` OPFS VFS
+### Previous `sahpool` OPFS VFS
 
-This approach involves embedding sqlite into the wasm program, but then running that on a separate web worker with a facade in place to hide the communication between the two processes. In theory OPFS is likely faster than IndexedDB, but cross-process communication latency likely kills any perf improvements we'd theoretically gain. No benchmarking has been attempted to determine the truth of the matter.
+This earlier approach embedded SQLite into the WASM program and ran it in a
+separate web worker with a message facade. It introduced communication overhead,
+but no benchmarks established how its performance compared with IndexedDB.
 
-- Works fine unencrypted; should theoretically have better DB perf than the IndexedDB VFS
+- Worked unencrypted; performance relative to IndexedDB was not measured
 - Got moderately quickly to the same state as the current IDB-backed implementation, to wit: encrypting a blank DB works, and operating on a freshly-encrypted DB works, but once the DB is locked, establishing a new unencrypted connection tends to fail for mysterious reasons.
 - Working with OPFS is a real pain for development: once a database has been locked, it is a real pain to get it to unlock again, or even to just delete the whole thing. OPFS eliminates many out of context tools like the filesystem which would make it simple to just delete a DB and start over again.
 - The requirement to communicate via channels and replicate the whole program's interface dramatically increases the maintenance burden, at least for programs of this size.
 - This experiment targets only the `JS -> IPC -> Rust/WASM in the worker` flow. We didn't even attempt `Rust/WASM -> JS -> IPC -> Rust/WASM in the worker`.
 - Most recent commit: [`7e547c4`](https://github.com/coriolinus/rusqlite-experiment/tree/7e547c4d14453cf2900ff24de1925476e799d4c7)
 
-**Conclusion**: unless we are forced into it, the additional latency and overhead of routing all DB work to a web worker through the JS layer is a huge pain to deal with and we're better off avoiding it.
+**Historical conclusion**: the worker facade increased maintenance complexity.
+That motivates testing direct JSPI-backed OPFS access in the page. It does not
+establish that OPFS itself is unsuitable or that the new approach will be faster.
 
 ## Demo
+
+This is the existing IndexedDB/encryption demo and the acceptance baseline for
+the later JSPI integration. Its recorded outputs do not demonstrate JSPI support.
 
 1. Run the demo with `make serve-spa` and then open a browser at `localhost:8080`.
 1. The database is unencrypted and accessible; you can create a list and some items.
