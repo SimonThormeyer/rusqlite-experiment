@@ -19,6 +19,7 @@ See the [recorded results](jspi-probe/README.md#browser-verification).
 The TODO application still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
 `multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
 A minimal buffered writable VFS probe also passed twice in browser tests.
+The writable-database page-reload check also passed twice in browser tests.
 Crash-safe storage and SPA integration are not implemented.
 
 ### Proposed architecture
@@ -51,7 +52,8 @@ two successful runs, and a [read-only OPFS probe](jspi-probe/README.md#read-only
 verified in two successful runs. The next storage-only probe checks offset writes,
 truncation, visibility on close, and abort before implementing SQLite write
 callbacks; one successful run is recorded. A buffered writable VFS passed twice
-with a memory rollback journal. Persistent journaling and stages
+with a memory rollback journal; reopening in a fresh WASM instance after page
+reload passed twice in a separate check. Persistent journaling and stages
 4–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 

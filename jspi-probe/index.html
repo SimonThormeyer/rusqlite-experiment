@@ -24,6 +24,9 @@ close, and abort. This does not write through SQLite.</p>
 <p>Writable SQLite check: buffer pending bytes, publish at sync, then reopen the
 OPFS database. One connection and a memory rollback journal; no crash-safety guarantee.</p>
 <button id="writable" disabled>Run writable SQLite checks</button>
+<p>Reload check: commit an OPFS database, reload this page, and verify the stored
+bytes and SQL rows in a fresh WASM instance before deleting the test database.</p>
+<button id="writable-reload" disabled>Run writable SQLite reload checks</button>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>
 <script type="module" src="./main.js"></script>

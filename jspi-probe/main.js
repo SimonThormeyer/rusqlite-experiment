@@ -3,13 +3,15 @@ import { runSqliteChecks } from './sqlite-checks.js';
 import { runReadonlyChecks } from './readonly-checks.js';
 import { runWriteChecks } from './write-checks.js';
 import { runWritableChecks } from './writable-checks.js';
+import { prepareWritableReload, finishWritableReload } from './reload-checks.js';
 
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
 const readonlyButton = document.querySelector('#readonly');
 const writeButton = document.querySelector('#writes');
 const writableButton = document.querySelector('#writable');
-const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton]) control.disabled = busy; };
+const reloadButton = document.querySelector('#writable-reload');
+const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -88,6 +90,23 @@ async function finish(saved) {
 }
 
 button.addEventListener('click', () => start().catch(fail));
+reloadButton.addEventListener('click', async () => {
+  setBusy(true);
+  lines = [];
+  log.textContent = '';
+  status.textContent = 'Creating the database before reload…';
+  status.dataset.result = 'running';
+  try {
+    const saved = await prepareWritableReload(report);
+    try {
+      sessionStorage.setItem(checkpoint, JSON.stringify({ ...saved, lines }));
+    } catch (error) {
+      try { await remove(saved.name); } catch { /* Preserve the checkpoint error. */ }
+      throw error;
+    }
+    location.reload();
+  } catch (error) { fail(error); }
+});
 async function runAdditionalChecks(checks, label) {
   setBusy(true);
   lines = [];
@@ -111,7 +130,22 @@ try {
     'This browser does not support WebAssembly JSPI');
   await init();
   const saved = sessionStorage.getItem(checkpoint);
-  if (saved) await finish(JSON.parse(saved));
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    if (parsed.kind === 'writable-reload') {
+      status.textContent = 'Verifying the database after reload…';
+      status.dataset.result = 'running';
+      lines = parsed.lines;
+      await finishWritableReload(parsed, report);
+      sessionStorage.removeItem(checkpoint);
+      status.textContent = 'PASS: all writable SQLite reload checks completed';
+      status.dataset.result = 'pass';
+      setBusy(false);
+    } else {
+      assert(parsed.kind === undefined, 'Unknown reload checkpoint kind');
+      await finish(parsed);
+    }
+  }
   else {
     status.textContent = 'Ready';
     status.dataset.result = 'ready';

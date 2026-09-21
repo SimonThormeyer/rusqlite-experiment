@@ -22,6 +22,7 @@ A read-only OPFS `xRead` probe also passed twice in browser tests, separate
 from this application's build and storage.
 The storage-only probe also passed its OPFS write/truncate/visibility checks;
 a separate buffered writable SQLite probe also passed twice in browser tests.
+Its page-reload verification check also passed twice in browser tests.
 This SPA still uses IndexedDB.
 
 During that later integration, database operations that can suspend will return

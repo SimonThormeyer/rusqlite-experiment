@@ -35,10 +35,15 @@ foregrounded and expect **PASS: all OPFS write semantics checks completed**.
 Run it twice and report all output, including the `OBSERVED` line. This check
 does not reload the page and does not write a SQLite database.
 
-For the current step, click **Run writable SQLite checks**. Expect **PASS: all
+For the writable VFS step, click **Run writable SQLite checks**. Expect **PASS: all
 writable SQLite checks completed**. Run it twice and report the output. It uses
 fresh test files, one connection at a time, and a memory rollback journal. There
 is no page reload or crash test.
+
+For the current step, click **Run writable SQLite reload checks**. The page
+creates and commits a test database, reloads automatically, verifies it, and
+deletes it. Expect **PASS: all writable SQLite reload checks completed**. Run it
+twice and report the output. Keep the same hostname and port through the reload.
 
 Prerequisites: Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 `miniserve`. The first build may download the matching wasm-bindgen CLI.
@@ -92,6 +97,8 @@ passed twice.
 The storage-only write-semantics probe passed a browser test using the
 same pinned toolchain. A second successful run remains unverified.
 The buffered writable VFS passed two browser tests with that toolchain.
+The page-reload check passed twice using the existing Rust exports; no Rust or
+build-setting changes were needed for this step.
 
 ## SQLite callback check
 
@@ -241,8 +248,31 @@ The browser checks cover:
 
 The last failure is injected before any OPFS mutation; it does not simulate disk
 failure, quota exhaustion, partial writes, or a failed close. Test files are
-removed after the run. Persistent journaling, cross-tab locking, page-reload
-verification of this writable path, performance, and encryption are future steps.
+removed after the run. Persistent journaling, cross-tab locking, performance,
+and encryption are future steps. The separate reload check below now tests this
+writable path across page lifetimes.
+
+## Writable SQLite reload check
+
+Before reload, the existing writable export creates the database, commits its
+known binary rows, exercises rollback, and closes with an uncommitted deletion.
+The page records the published file's length and SHA-256. A sessionStorage
+checkpoint contains only the filename, length, digest, page-instance token, and
+log lines; it contains no database bytes or serialized WASM state.
+
+After `location.reload()`, the normal module initialization creates a fresh WASM
+instance. The check requires a different page-instance token and reads the
+database from OPFS. It compares the length and digest, then invokes the existing
+export in verification mode: no seeding, schema creation, or data insertion.
+That export checks the committed rows, binary payloads, and `integrity_check`.
+A rejecting publication hook catches unexpected attempts to publish during
+verification. A second digest check confirms the stored bytes remain unchanged.
+Finally, the test deletes the database and requires `NotFoundError` on a read.
+
+Successful runs clear the checkpoint. Failures after reload may leave the test
+database in `rusqlite-jspi-probe`; the checkpoint is cleared to avoid an automatic
+retry loop. This check passed twice in browser tests. A normal reload after a
+completed commit is not a process-crash, power-loss, or interrupted-commit test.
 
 ## Browser verification
 
@@ -341,9 +371,31 @@ PASS: test files removed; memory journal only, no crash-durability claim
 
 This verifies buffered read-your-writes, publication, ordinary SQL commit and
 rollback, reopening from OPFS, recovery from a failure injected before publication,
-and repeatability. Reopening used a fresh VFS/connection in the same page; a fresh
-WASM instance after page reload has not yet been tested for this writable path.
+and repeatability. These runs reopened a fresh VFS/connection in the same page;
+the subsequent results below verify reopening after page reload as well.
 Persistent journaling, cross-tab locking, and crash durability remain unverified.
+
+### Writable SQLite reload results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all writable SQLite reload checks completed
+PASS: direct xWrite/xRead saw pending bytes; xSync published them; xTruncate published an empty file
+PASS: SQL commits, rollback, and close with an uncommitted transaction and integrity_check (7 xWrite calls; 5 publications)
+PASS: committed database closed before reload (16384 bytes)
+Reloaded with a fresh page and WASM instance
+PASS: OPFS database length and SHA-256 survived page reload
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: committed rows and binary payloads survived; uncommitted deletion did not
+PASS: verification left OPFS database bytes unchanged
+PASS: database removed after reload verification; no crash-durability claim
+```
+
+This verifies that the committed 16,384-byte database survives a normal page
+reload and is queryable in a fresh WASM instance. Its hash remained unchanged,
+the expected committed rows were present, and the uncommitted deletion was absent.
+It does not establish recovery from interrupted commits or process crashes.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,
