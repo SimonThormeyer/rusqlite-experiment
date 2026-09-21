@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TODO · OPFS first slice</title>
+<style>
+body { font: 17px/1.5 system-ui,sans-serif; max-width: 48rem; margin: 3rem auto; padding: 0 1rem; }
+label { display: block; margin-top: 1rem; } input:not([type="checkbox"]) { width: 95%; padding: .5rem; font: inherit; }
+li { margin-bottom: 1rem; }
+button { font: inherit; padding: .5rem; margin: 1rem .5rem 0 0; }
+pre { white-space: pre-wrap; background: #eee; padding: 1rem; }
+</style>
+<h1>TODO · OPFS first slice</h1>
+<p>Create or select a list, add items, edit their descriptions or completion status, and
+rename lists, or delete a list and all its items. Reopen or reload to verify persistence. This experimental
+database is unencrypted.</p>
+<form id="create-form">
+<label>List title <input id="title" required value="My first OPFS list"></label>
+<label>First item <input id="description" required value="Try the shared TODO model"></label>
+<button id="create" disabled>Create list and item</button>
+<button id="read" type="button" disabled>Reopen selected list</button>
+</form>
+<p><button id="download" disabled>Download database</button> Includes all lists and saved items, even when no list is selected.</p>
+<p id="status" role="status">Loading…</p>
+<label>Existing lists <select id="lists" disabled><option value="">No list loaded</option></select></label>
+<form id="rename-form">
+<label>Selected list title <input id="rename-title" required disabled></label>
+<button id="rename" disabled>Rename list</button>
+<button id="delete-list" type="button" disabled>Delete list and all its items</button>
+</form>
+<form id="add-form">
+<label>New item <input id="new-description" required disabled></label>
+<button id="add" disabled>Add to selected list</button>
+</form>
+<h2 id="list-title">No list loaded</h2>
+<ul id="items"></ul>
+<p><button id="checks" disabled>Run TODO slice checks (reloads three times)</button></p>
+<p><button id="export-checks" disabled>Run TODO export checks</button></p>
+<pre id="log"></pre>
+<p><a href="./">Back to probe checks</a></p>
+<script type="module" src="./todo-slice.js"></script>
+</html>

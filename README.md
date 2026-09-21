@@ -37,6 +37,26 @@ The [writable VFS contract audit](jspi-probe/VFS-CONTRACT.md) has identified and
 fixed offset conversion, open-policy, and lock-state gaps. The contract checks
 passed twice, as did writable and cross-tab regressions for these changes.
 The audit is complete within the documented experimental contract.
+The [first TODO application slice](jspi-probe/TODO-SLICE.md) now uses the shared
+model and schema with this VFS on a separate page. Its release build passes,
+and its automated browser create/read/reload and error-recovery checks passed
+twice. The manual demo-form checks and post-integration contract rerun passed.
+The TODO slice now adds shared-model item editing, completion changes, and
+deletion. The expanded two-reload checks passed twice, and the manual UI checks
+passed, completing this item-mutation step.
+The separate TODO slice now adds list selection and adding items to existing
+lists, with selection retained across page reloads in the same tab. The expanded
+browser checks passed twice; the manual selection, reload, list isolation, and
+empty-list addition checks passed. This extension is complete.
+List renaming and deletion, including cascade removal of items and creation
+after deleting the last list, are also complete. The three-reload browser sequence
+passed twice, and the manual UI checks passed.
+A database download extension now captures committed bytes under exclusive
+ownership and validates integrity without publication. Dedicated export checks
+and CRUD regressions each passed twice. Native SQLite verified the downloaded
+file's integrity and rows. A later live edit left
+the downloaded snapshot unchanged and persisted after reopening the demo.
+The database download step is complete.
 
 ### Proposed architecture
 
@@ -79,7 +99,9 @@ buffered VFS writes and staged publication now passed twice in the combined suit
 Actual quota exhaustion and seven process-termination checks each passed twice.
 The bounded recovery decision is
 recorded; the VFS contract checks and writable/cross-tab regressions each passed
-twice, completing the contract audit. Stages 4–6 remain future work. The
+twice, completing the contract audit. Stage 4 has a first unencrypted TODO slice
+with two successful browser-check runs and completion of demo-form
+checks and a contract rerun. Full SPA integration and stages 5–6 remain future work. The
 original storage probe's repeatability and other browsers remain unverified.
 
 1. **Document the direction (complete).** Separate the running IndexedDB

@@ -471,6 +471,33 @@ required. The later completed-run summary records two successful actual-quota ru
 
 ## Browser verification
 
+The [first TODO application slice](TODO-SLICE.md) now connects the shared
+`todo-list` crate's schema and model to the audited VFS, with a separate
+create/read page and reload/failure checks. Its build passes and the automated
+browser sequence passed twice (13 suspension ticks in the output).
+The manual demo-form checks and post-integration contract rerun passed.
+The [slice results](TODO-SLICE.md#recorded-browser-results) record the full output.
+This starts application integration without replacing the baseline SPA.
+The slice now adds shared-model item editing, completion toggles, and deletion.
+Its expanded checks reload twice to verify both saved edits and deletion;
+the expanded automated browser checks passed twice. Manual editing, completion,
+deletion, and reload checks also passed, completing this step. The full output
+is
+recorded in [the slice results](TODO-SLICE.md#item-mutation-results).
+The separate TODO slice now adds list selection and adding items to existing
+lists, with selection retained across page reloads in the same tab. The expanded
+browser checks passed twice; the manual selection, reload, list isolation, and
+empty-list addition checks passed. This extension is complete.
+List renaming and deletion, including cascade removal of items and creation
+after deleting the last list, are also complete. The three-reload browser sequence
+passed twice, and the manual UI checks passed.
+A database download extension now captures committed bytes under exclusive
+ownership and validates integrity without publication. Dedicated export checks
+and CRUD regressions each passed twice. Native SQLite verified the downloaded
+file's integrity and rows. A later live edit left
+the downloaded snapshot unchanged and persisted after reopening the demo.
+The database download step is complete.
+
 The [writable VFS contract audit](VFS-CONTRACT.md) adds checked 64-bit callback
 offsets, stricter opens, local lock-state reporting, and explicit rejection of
 unsupported SQL settings/attachments. Its **Run VFS contract checks** passed

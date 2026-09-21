@@ -14,6 +14,7 @@ use std::{
 };
 
 mod contract;
+mod todo;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(module = "/publication.js")]
@@ -552,33 +553,7 @@ fn run(
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
             "jspi-writable-probe",
         )?;
-        db.execute_batch(
-            "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=FULL; PRAGMA cache_spill=OFF; PRAGMA temp_store=MEMORY;",
-        )?;
-        unsafe extern "C" fn authorize(
-            _: *mut std::ffi::c_void,
-            action: i32,
-            _: *const std::ffi::c_char,
-            _: *const std::ffi::c_char,
-            _: *const std::ffi::c_char,
-            _: *const std::ffi::c_char,
-        ) -> i32 {
-            if action == ffi::SQLITE_ATTACH || action == ffi::SQLITE_DETACH {
-                ffi::SQLITE_DENY
-            } else {
-                ffi::SQLITE_OK
-            }
-        }
-        let code = unsafe {
-            sqlite_wasm_rs::sqlite3_set_authorizer(
-                db.handle(),
-                Some(authorize),
-                std::ptr::null_mut(),
-            )
-        };
-        if code != ffi::SQLITE_OK {
-            return Err(rusqlite::Error::InvalidQuery);
-        }
+        configure_connection(&db)?;
         if create {
             db.execute_batch(
                 "CREATE TABLE writable(id INTEGER PRIMARY KEY, payload BLOB NOT NULL);
@@ -703,4 +678,31 @@ fn run(
         buffer.publications
     ));
     Ok(logs.join("\n"))
+}
+
+fn configure_connection(db: &Connection) -> rusqlite::Result<()> {
+    db.execute_batch(
+            "PRAGMA journal_mode=MEMORY; PRAGMA synchronous=FULL; PRAGMA cache_spill=OFF; PRAGMA temp_store=MEMORY;",
+        )?;
+    unsafe extern "C" fn authorize(
+        _: *mut std::ffi::c_void,
+        action: i32,
+        _: *const std::ffi::c_char,
+        _: *const std::ffi::c_char,
+        _: *const std::ffi::c_char,
+        _: *const std::ffi::c_char,
+    ) -> i32 {
+        if action == ffi::SQLITE_ATTACH || action == ffi::SQLITE_DETACH {
+            ffi::SQLITE_DENY
+        } else {
+            ffi::SQLITE_OK
+        }
+    }
+    let code = unsafe {
+        sqlite_wasm_rs::sqlite3_set_authorizer(db.handle(), Some(authorize), std::ptr::null_mut())
+    };
+    if code != ffi::SQLITE_OK {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(())
 }

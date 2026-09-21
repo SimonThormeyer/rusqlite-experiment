@@ -41,6 +41,27 @@ single-file policy and fixes callback gaps; contract checks passed twice.
 Writable and cross-tab regressions for those changes also each passed twice,
 completing the audit's browser acceptance checks.
 The SPA has not yet adopted those changes.
+A separate [TODO integration page](../jspi-probe/TODO-SLICE.md) now exercises the
+same Rust schema/model over JSPI and OPFS: initialization and one list/item
+create/read flow, including reopening. Its automated browser checks passed twice;
+the manual demo-form checks and post-integration contract rerun passed.
+It is served with the probe, while this IndexedDB SPA remains the baseline.
+The separate page now also offers item editing, completion changes, and deletion
+through the shared model. The expanded automated browser checks passed twice;
+the manual UI checks passed, completing this extension.
+The separate TODO slice now adds list selection and adding items to existing
+lists, with selection retained across page reloads in the same tab. The expanded
+browser checks passed twice; the manual selection, reload, list isolation, and
+empty-list addition checks passed. This extension is complete.
+List renaming and deletion, including cascade removal of items and creation
+after deleting the last list, are also complete. The three-reload browser sequence
+passed twice, and the manual UI checks passed.
+A database download extension now captures committed bytes under exclusive
+ownership and validates integrity without publication. Dedicated export checks
+and CRUD regressions each passed twice. Native SQLite verified the downloaded
+file's integrity and rows. A later live edit left
+the downloaded snapshot unchanged and persisted after reopening the demo.
+The database download step is complete.
 
 During that later integration, database operations that can suspend will return
 Promises and must be awaited. Existing async CRUD calls are a starting point,
