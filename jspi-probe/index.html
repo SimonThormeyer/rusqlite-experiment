@@ -27,6 +27,12 @@ OPFS database. One connection and a memory rollback journal; no crash-safety gua
 <p>Reload check: commit an OPFS database, reload this page, and verify the stored
 bytes and SQL rows in a fresh WASM instance before deleting the test database.</p>
 <button id="writable-reload" disabled>Run writable SQLite reload checks</button>
+<p>Exclusive access check: opens a second tab to attempt the same database while
+this tab owns it, then retries after release. Keep both tabs open until completion.</p>
+<button id="cross-tab" disabled>Run cross-tab lock checks</button>
+<p>Owner termination check: opens a committed database in a helper tab, queues
+for its lock, then closes the helper and verifies the database in this tab.</p>
+<button id="owner-close" disabled>Run owner-tab termination checks</button>
 <p id="status" role="status">Loading…</p>
 <pre id="log"></pre>
 <script type="module" src="./main.js"></script>

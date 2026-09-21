@@ -23,6 +23,10 @@ from this application's build and storage.
 The storage-only probe also passed its OPFS write/truncate/visibility checks;
 a separate buffered writable SQLite probe also passed twice in browser tests.
 Its page-reload verification check also passed twice in browser tests.
+Exclusive Web Locks now wrap the standalone read-only and writable probes;
+their two-tab ownership check passed twice in browser tests.
+The writable regression checks with locking enabled also passed twice.
+The standalone owner-tab termination check also passed twice in browser tests.
 This SPA still uses IndexedDB.
 
 During that later integration, database operations that can suspend will return

@@ -176,6 +176,7 @@ fn error(message: impl std::fmt::Display) -> JsValue {
 #[wasm_bindgen(jspi)]
 pub fn sqlite_readonly_probe(name: String, before_read: Function) -> Result<Vec<u32>, JsValue> {
     let _busy = super::SqliteGuard::enter()?;
+    let _database_lock = super::locking::DatabaseLock::acquire(&name)?;
     let handle: FileSystemFileHandle =
         super::suspend(&super::directory()?.get_file_handle(&name))?.dyn_into()?;
     let snapshot: File = super::suspend(&handle.get_file())?.dyn_into()?;

@@ -2,6 +2,7 @@
 // JSPI is experimental in the pinned wasm-bindgen release.
 #![allow(deprecated)]
 
+mod locking;
 mod readonly;
 mod sqlite;
 mod writable;

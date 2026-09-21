@@ -4,6 +4,8 @@ import { runReadonlyChecks } from './readonly-checks.js';
 import { runWriteChecks } from './write-checks.js';
 import { runWritableChecks } from './writable-checks.js';
 import { prepareWritableReload, finishWritableReload } from './reload-checks.js';
+import { runCrossTabChecks } from './cross-tab-checks.js';
+import { runTerminationChecks } from './termination-checks.js';
 
 const button = document.querySelector('#run');
 const sqliteButton = document.querySelector('#sqlite');
@@ -11,7 +13,9 @@ const readonlyButton = document.querySelector('#readonly');
 const writeButton = document.querySelector('#writes');
 const writableButton = document.querySelector('#writable');
 const reloadButton = document.querySelector('#writable-reload');
-const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton]) control.disabled = busy; };
+const lockButton = document.querySelector('#cross-tab');
+const terminationButton = document.querySelector('#owner-close');
+const setBusy = (busy) => { for (const control of [button, sqliteButton, readonlyButton, writeButton, writableButton, reloadButton, lockButton, terminationButton]) control.disabled = busy; };
 const status = document.querySelector('#status');
 const log = document.querySelector('#log');
 const checkpoint = 'rusqlite-jspi-probe-reload';
@@ -124,6 +128,8 @@ sqliteButton.addEventListener('click', () => runAdditionalChecks(runSqliteChecks
 readonlyButton.addEventListener('click', () => runAdditionalChecks(runReadonlyChecks, 'OPFS read-only'));
 writeButton.addEventListener('click', () => runAdditionalChecks(runWriteChecks, 'OPFS write semantics'));
 writableButton.addEventListener('click', () => runAdditionalChecks(runWritableChecks, 'writable SQLite'));
+lockButton.addEventListener('click', () => runAdditionalChecks(runCrossTabChecks, 'cross-tab lock'));
+terminationButton.addEventListener('click', () => runAdditionalChecks(runTerminationChecks, 'owner-tab termination'));
 try {
   assert(isSecureContext && navigator.storage?.getDirectory, 'OPFS requires HTTPS or localhost');
   assert(typeof WebAssembly.Suspending === 'function' && typeof WebAssembly.promising === 'function',

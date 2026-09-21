@@ -206,7 +206,28 @@ pub fn sqlite_writable_probe(
     create: bool,
     before_publish: Function,
 ) -> Result<String, JsValue> {
+    run(name, create, before_publish, None)
+}
+
+/// Hold an already-committed, verified database open until the test gate resolves.
+/// The owner-termination test destroys this page while that gate remains pending.
+#[wasm_bindgen(jspi)]
+pub fn sqlite_hold_committed_probe(
+    name: String,
+    before_publish: Function,
+    before_close: Function,
+) -> Result<String, JsValue> {
+    run(name, false, before_publish, Some(before_close))
+}
+
+fn run(
+    name: String,
+    create: bool,
+    before_publish: Function,
+    before_close: Option<Function>,
+) -> Result<String, JsValue> {
     let _busy = super::SqliteGuard::enter()?;
+    let _database_lock = super::locking::DatabaseLock::acquire(&name)?;
     let bytes = super::read(&name)?;
     if bytes.len() > LIMIT || (create && !bytes.is_empty()) {
         return Err(js_error(
@@ -320,6 +341,13 @@ pub fn sqlite_writable_probe(
         // Dropping an uncommitted transaction must not publish its changes.
         if create {
             db.execute_batch("BEGIN; DELETE FROM writable;")?;
+        }
+        if let Some(gate) = &before_close {
+            let promise = gate
+                .call0(&JsValue::NULL)
+                .and_then(|value| value.dyn_into::<Promise>())
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            super::suspend(&promise).map_err(|_| rusqlite::Error::InvalidQuery)?;
         }
         db.close().map_err(|(_, e)| e)?;
         Ok(())

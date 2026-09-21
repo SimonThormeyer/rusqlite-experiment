@@ -40,10 +40,22 @@ writable SQLite checks completed**. Run it twice and report the output. It uses
 fresh test files, one connection at a time, and a memory rollback journal. There
 is no page reload or crash test.
 
-For the current step, click **Run writable SQLite reload checks**. The page
+For the reload step, click **Run writable SQLite reload checks**. The page
 creates and commits a test database, reloads automatically, verifies it, and
 deletes it. Expect **PASS: all writable SQLite reload checks completed**. Run it
 twice and report the output. Keep the same hostname and port through the reload.
+
+For the cross-tab step, click **Run cross-tab lock checks**. Allow the second tab
+to open and keep both tabs open until it finishes. The helper tab closes itself
+at completion; results appear in the original tab. Expect **PASS: all cross-tab
+lock checks completed**. Run it twice and report the output. Both tabs must use
+the same browser profile and origin. Also rerun **Run writable SQLite checks**
+to exercise publication-failure recovery with the new locking enabled.
+
+For the current step, click **Run owner-tab termination checks**. Allow the
+helper tab to open; the test closes it automatically while it owns the database.
+Expect **PASS: all owner-tab termination checks completed** in the original tab.
+Run it twice and report the output. Do not manually close either tab mid-test.
 
 Prerequisites: Rust with the `wasm32-unknown-unknown` target, `wasm-pack`, and
 `miniserve`. The first build may download the matching wasm-bindgen CLI.
@@ -99,6 +111,11 @@ same pinned toolchain. A second successful run remains unverified.
 The buffered writable VFS passed two browser tests with that toolchain.
 The page-reload check passed twice using the existing Rust exports; no Rust or
 build-setting changes were needed for this step.
+The new Web Lock integration builds; three JavaScript lease tests pass using
+Node's Web Locks implementation. The two-tab browser check passed twice. The
+separate writable-check rerun with locking enabled also passed twice.
+The owner-tab termination probe passed twice in browser tests. Its build,
+JavaScript checks, and the three lease tests also pass.
 
 ## SQLite callback check
 
@@ -163,12 +180,13 @@ The checks cover:
   and removal of the test copy from OPFS.
 
 The read-only VFS advertises `SQLITE_IOCAP_IMMUTABLE`. The test owns a uniquely
-named copy and must not modify it while it is open. Lock callbacks are no-ops
-under this assumption; this is **not cross-tab locking support**. Mutating VFS
+named copy and must not modify it while it is open. SQLite lock callbacks remain
+no-ops; an exclusive Web Lock now wraps the entire read-only export, as described
+below. This is cooperative whole-database ownership, not SQLite lock-level support. Mutating VFS
 operations reject with `SQLITE_READONLY`; journal and WAL files are unsupported.
 SQLite closes before VFS unregistration and before the file snapshot is dropped.
-The original file-access exports remain independent of the SQLite guard, so it
-is the caller's responsibility to leave the fixture unchanged during a run.
+The original file-access exports remain independent of the SQLite guard and Web
+Lock, so callers must leave the fixture unchanged during a run.
 
 This check advances the read side only. The separate writable probe below adds
 buffered writes; durable sync, persistent journaling, crash recovery, encryption,
@@ -227,8 +245,9 @@ The caller pre-creates an empty, uniquely named file. Only main-database opens
 are supported; journal/temporary files and WAL are rejected. SQLite is configured
 with `journal_mode=MEMORY`, `synchronous=FULL`, and `cache_spill=OFF`. The memory
 journal permits ordinary rollback but provides no recovery after a crash. Lock
-callbacks are no-ops: the test owns its file, permits one SQLite probe per WASM
-instance, and does not support shared files across tabs or concurrent writers.
+callbacks are no-ops: the test owns its file and permits one SQLite probe per WASM
+instance. An exclusive Web Lock now rejects competing SQLite exports for the
+same filename across tabs; shared readers and concurrent writers remain unsupported.
 
 The browser checks cover:
 
@@ -248,8 +267,8 @@ The browser checks cover:
 
 The last failure is injected before any OPFS mutation; it does not simulate disk
 failure, quota exhaustion, partial writes, or a failed close. Test files are
-removed after the run. Persistent journaling, cross-tab locking, performance,
-and encryption are future steps. The separate reload check below now tests this
+removed after the run. Persistent journaling, performance, and encryption remain
+future steps; the cross-tab ownership check passed twice. The separate reload check tests this
 writable path across page lifetimes.
 
 ## Writable SQLite reload check
@@ -273,6 +292,69 @@ Successful runs clear the checkpoint. Failures after reload may leave the test
 database in `rusqlite-jspi-probe`; the checkpoint is cleared to avoid an automatic
 retry loop. This check passed twice in browser tests. A normal reload after a
 completed commit is not a process-crash, power-loss, or interrupted-commit test.
+
+## Cross-tab exclusive ownership check
+
+The read-only and writable SQLite exports acquire an exclusive Web Lock before
+reading OPFS or registering/opening SQLite. The key includes the probe directory
+and exact bare filename. Acquisition uses `ifAvailable: true`: a contending export
+rejects immediately with `DatabaseBusyError` and `sqliteCode=5` (`SQLITE_BUSY`).
+That code is reported at the entry boundary, before SQLite opens a connection.
+Missing Web Locks support is a startup error for these exports, not an unlocked
+fallback.
+
+The Rust guard holds the lease across all JSPI suspensions. On normal return or
+error, it releases after connections, VFS registration, and buffer/snapshot state
+have been dropped, and waits for release completion. SQLite's internal lock
+callbacks remain no-ops because this experiment permits only exclusive ownership
+for the entire invocation. The in-instance SQLite guard still rejects overlapping
+probes before entering SQLite.
+
+The browser check opens `lock-peer.html` in a second tab with a fresh WASM instance.
+Tab A pauses at a SQL-triggered publication while retaining ownership. Tab B calls
+the Rust writable and read-only exports directly; both must report busy. The test
+checks unchanged bytes, releases tab A, and requires tab B to acquire and query
+the committed database successfully. A validation error after acquisition in tab
+B must also release ownership so tab A can reopen. Messages verify sender,
+origin, and a unique run token; timeouts surface a failed or closed helper tab.
+
+This mechanism coordinates cooperating exports only. The raw storage helpers,
+external code, and callers using a different lock name can bypass it; test setup
+and cleanup must run while neither tab owns the database. The separate termination
+probe below now tests page-close lock release. Shared readers, SQLite lock
+escalation, process crashes, and journal recovery remain outside these checks.
+No database is recovered by forcibly stealing a lock.
+
+The lease helper has standalone tests (Node with `navigator.locks` required):
+
+```sh
+node --test jspi-probe/locks.test.mjs
+```
+
+Those tests cover contention, different filenames, release/reacquisition, error
+cleanup, and filename validation. They do not replace the two-tab browser test.
+
+## Owner-tab termination check
+
+The main tab first creates and commits the known database, closes the connection,
+and retains its published bytes for comparison. The helper then acquires the
+same Web Lock, opens SQLite, verifies rows and integrity, and suspends on a test
+gate **before closing its connection**. The gate never resolves. The helper is
+only reading committed data and has no pending publication or write transaction.
+
+The main tab confirms a normal SQLite open rejects with `SQLITE_BUSY`. It then
+queues an exclusive Web Lock request and inspects `navigator.locks.query()` to
+confirm both the held lock and pending request exist before closing the helper.
+The test sends no release message and does not resolve the helper's gate. Browser
+teardown must release ownership and grant the queued request. After releasing
+that test lease, the surviving tab opens SQLite, verifies rows and integrity,
+compares the database bytes with the pre-test copy, and removes the file.
+
+Queueing is test-only: normal database exports still fail immediately on
+contention. Timeouts fail the check; cleanup does not delete a database while
+ownership remains unavailable. Two browser runs passed. This is ordinary
+tab-close lifecycle cleanup, not a browser-process crash, power failure, or
+interrupted commit, and it does not establish crash durability.
 
 ## Browser verification
 
@@ -373,7 +455,9 @@ This verifies buffered read-your-writes, publication, ordinary SQL commit and
 rollback, reopening from OPFS, recovery from a failure injected before publication,
 and repeatability. These runs reopened a fresh VFS/connection in the same page;
 the subsequent results below verify reopening after page reload as well.
-Persistent journaling, cross-tab locking, and crash durability remain unverified.
+These writable runs preceded the Web Lock integration. Cross-tab exclusive
+ownership is verified separately below; persistent journaling and crash durability
+remain unverified.
 
 ### Writable SQLite reload results
 
@@ -396,6 +480,70 @@ This verifies that the committed 16,384-byte database survives a normal page
 reload and is queryable in a fresh WASM instance. Its hash remained unchanged,
 the expected committed rows were present, and the uncommitted deletion was absent.
 It does not establish recovery from interrupted commits or process crashes.
+
+### Cross-tab ownership results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all cross-tab lock checks completed
+PASS: second tab initialized its own WASM instance
+PASS: second-tab writable and read-only opens rejected with SQLITE_BUSY while owner held the lock
+PASS: rejected contenders left database bytes unchanged
+PASS: owner completed SQL publication and released its lock
+PASS: second tab acquired after release and verified committed rows and integrity_check
+PASS: lock released after second-tab error; original tab reopened successfully
+PASS: test database removed; cooperative exclusive access only, no crash-recovery claim
+```
+
+This verifies cooperative exclusion between the SQLite probes, unchanged data
+after contention, and release/reacquisition after success and a validation error.
+The writable regression results below additionally verify recovery after an
+injected publication failure with locking enabled. Owner-tab termination is
+verified separately below. Noncooperating storage access, persistent journaling,
+and crash recovery are not covered by these results.
+
+### Writable regression with locking enabled
+
+The writable SQLite checks passed **twice** after Web Lock integration. Results:
+
+```text
+PASS: all writable SQLite checks completed
+PASS: direct xWrite/xRead saw pending bytes; xSync published them; xTruncate published an empty file
+PASS: SQL commits, rollback, and close with an uncommitted transaction and integrity_check (7 xWrite calls; 5 publications)
+PASS: xSync suspended with event-loop progress (12 ticks); overlapping SQLite probe rejected
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: reopening discarded buffered state; committed rows survived and uncommitted deletion did not
+PASS: SQL publication rejection mapped to SQLITE_IOERR_FSYNC; pre-publication contents unchanged
+PASS: fresh VFS/connection recovered after injected publication failure
+PASS: test files removed; memory journal only, no crash-durability claim
+```
+
+Successful reacquisition after the injected publication failure verifies that the
+error path releases its Web Lock. This completes the requested writable regression
+check for the locking change; it does not establish crash recovery.
+
+### Owner-tab termination results
+
+The checks passed **twice**. Results:
+
+```text
+PASS: all owner-tab termination checks completed
+PASS: committed and closed database before owner-tab test (16384 bytes)
+PASS: helper tab verified committed rows and holds an open connection and exclusive lock
+PASS: surviving tab received SQLITE_BUSY before owner termination
+PASS: surviving tab queued for the held lock without stealing ownership
+PASS: closing owner tab released its lock and granted the queued waiter
+PASS: fresh connection loaded committed rows from OPFS and integrity_check (0 xWrite calls; 0 publications)
+PASS: committed rows and integrity_check survived; published bytes are unchanged
+PASS: test database removed; no commit was interrupted and no crash-durability claim
+```
+
+Browser teardown released the helper's exclusive lock without resolving its gate
+or requesting application cleanup. The queued survivor acquired ownership, then
+reopened and verified the unchanged committed database. This verifies tab-close
+lock lifecycle behavior and repeatability, not interrupted-commit recovery or
+browser-process crash durability.
 
 This follows the [upstream OPFS example](https://wasm-bindgen.github.io/wasm-bindgen/examples/jspi-opfs.html),
 with binary data and error propagation. Production-ready writable VFS semantics,
