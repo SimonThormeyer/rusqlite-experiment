@@ -1,7 +1,9 @@
 # Encryption before SPA integration
 
 Encryption validation precedes integration of the actual SPA.
-The baseline SPA/FFI remains on IndexedDB. The accepted unencrypted TODO slice
+The preserved baseline SPA/FFI remains on IndexedDB. The default SPA now uses
+the encrypted JSPI backend; its application acceptance and probe regressions
+passed on 2026-09-22. The accepted unencrypted TODO slice
 and its database are unchanged; this probe is not an encrypted application UI.
 
 ## Build and run
@@ -23,7 +25,10 @@ retains its fixture/checkpoint for investigation; do not clear it before reporti
 
 The Cargo `encryption` feature enables `sqlite-wasm-rs = 0.5.2`'s `sqlite3mc`
 feature. `pkg-encryption/` is separate from the accepted `pkg/` build. The root
-workspace lockfile, native CLI, existing FFI, and SPA are untouched.
+workspace lockfile, native CLI, and existing FFI are untouched. The default SPA
+now builds against `pkg-encryption/`; it uses separate application entry points
+and its own `todo-app-encrypted.sqlite` file. The probe-only encryption exports
+retain their fixture-name restriction.
 
 ## Wrapper and lifetime
 
@@ -68,7 +73,9 @@ connection-wrapper refactor. Acceptance of this
 encryption boundary stage is complete for the agreed scope: encrypted creation,
 keyed reopen, key changes, and ciphertext export. Plaintext conversion and
 removal of encryption are out of scope; encrypted databases remain encrypted
-permanently. Application integration and real password handling remain open.
+permanently. Application integration and in-memory password handling are now
+implemented; browser acceptance is recorded in
+[the SPA guide](../spa/README.md).
 
 ### Recorded browser results
 
@@ -113,5 +120,6 @@ at-rest encryption. No copy-and-replace conversion or expanded ATTACH/VACUUM
 support is needed for the agreed integration scope.
 A rejected operation after publication can still have changed committed state;
 these injected failures are specifically before publication, not a blanket
-atomic-rekey or power-loss guarantee. SQLCipher/native cipher interoperability,
-real password UX/storage, and encryption in the SPA remain unverified.
+atomic-rekey or power-loss guarantee. The integrated password UX and encrypted
+SPA acceptance checks passed on 2026-09-22. SQLCipher/native cipher
+interoperability remains unverified.

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Encrypted SPA integration checks</title>
+<style>body{font:17px/1.5 system-ui;max-width:65rem;margin:2rem auto;padding:1rem}pre{white-space:pre-wrap}button{font:inherit;padding:.5rem}</style>
+<h1>Encrypted SPA integration checks</h1>
+<p>Uses the SPA's session adapter and disposable databases with public test passwords. The application database is preserved.</p>
+<button id="run" disabled>Run integration checks (reloads page)</button>
+<p id="status" role="status">Loading…</p><pre id="log"></pre>
+<p><a href="./">Back to app</a></p>
+<script type="module" src="./checks.ts"></script>
+</html>

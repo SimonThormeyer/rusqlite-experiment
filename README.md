@@ -1,72 +1,30 @@
 # Rusqlite Experiment
 
-Encryption validation now precedes SPA integration. The
-[isolated encryption probe](jspi-probe/ENCRYPTION.md) adds encrypted creation,
-key changes,
-ciphertext export, and recovery checks; the encryption sequence passed twice.
-The post-change TODO/export regressions passed.
-Encrypted databases will be created encrypted and remain
-encrypted permanently. Plaintext conversion and removing encryption are out of
-scope; changing a key remains supported. The validated encryption boundary is
-sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+The default SPA now integrates the page-context JSPI/OPFS VFS with encrypted
+creation/unlocking, complete list/item CRUD, password changes, and ciphertext
+downloads. Integration checks, manual UI checks, and probe regressions passed on
+2026-09-22; see the
+[SPA run and verification guide](spa/README.md).
 
-How far can we get writing a TODO application that works both on the command line and the internet, backed by Rusqlite?
+The storage, SQLite callback, read/write, reload, cross-tab locking, publication
+failure, quota, process-termination, and VFS contract investigations are complete
+within the documented experimental limits. The unencrypted TODO slice (including
+all CRUD and downloads) passed its browser checks and manual verification. The
+isolated encrypted-creation, key-change, export, and failure-recovery suite passed
+twice, and its unencrypted regressions were confirmed. Details remain in the
+[probe results](jspi-probe/README.md), [TODO results](jspi-probe/TODO-SLICE.md), and
+[encryption results](jspi-probe/ENCRYPTION.md).
 
-## Direction and current status
+Encrypted databases are created encrypted and remain
+encrypted permanently. Existing plaintext conversion and encryption removal are
+out of scope. The actual SPA now reuses that tested backend through a guarded
+session adapter; no worker or persistent Rust connection object crosses the UI
+boundary. The native CLI and shared model are unchanged. The earlier IndexedDB
+SPA/FFI is preserved as a [separate baseline](spa/indexeddb/README.md).
 
-We plan to re-create the browser experiment with an OPFS-backed SQLite VFS using
-wasm-bindgen's JS Promise Integration (JSPI). The aim is to keep SQLite and the
-Rust application in the page's WASM instance, allowing synchronous SQLite VFS
-callbacks to reach Promise-based storage operations without the worker message
-facade used in the earlier `sahpool` experiment.
-
-This is a staged investigation. A [standalone JSPI/OPFS probe](jspi-probe/README.md)
-passed its original storage checks in a Firefox 156.0 (aarch64) session.
-The SQLite `xOpen` suspension check also passed twice in browser tests.
-The read-only OPFS `xRead` probe also passed twice in browser tests.
-A storage-only write/truncate/visibility probe also passed a browser test.
-See the [recorded results](jspi-probe/README.md#browser-verification).
-The TODO application still uses `sqlite-wasm-vfs`'s `relaxed-idb` backend with the
-`multipleciphers-relaxed-idb` VFS. The native CLI is unchanged.
-A minimal buffered writable VFS probe also passed twice in browser tests.
-The writable-database page-reload check also passed twice in browser tests.
-Exclusive Web Locks now protect the read-only and writable SQLite exports; a
-two-tab ownership check passed twice in browser tests.
-The owner-tab termination check also passed twice in browser tests.
-A controlled uncommitted-transaction interruption check also passed twice, with
-the owner paused before COMMIT or any VFS write.
-Crash-safe storage and SPA integration are not implemented.
-The combined publication-interruption and recovery suite passed twice, followed
-by two successful writable regression runs. It covers dirty buffers, staged stream writes,
-close boundaries, rejected operations, and reopening complete database versions.
-Real-quota exhaustion and each of seven process-termination boundaries passed
-twice, completing the combined stage within its
-experimental scope. We retain the bounded whole-file design. See the
-[complete procedure and recovery decision](jspi-probe/FINAL-RECOVERY.md).
-The [writable VFS contract audit](jspi-probe/VFS-CONTRACT.md) has identified and
-fixed offset conversion, open-policy, and lock-state gaps. The contract checks
-passed twice, as did writable and cross-tab regressions for these changes.
-The audit is complete within the documented experimental contract.
-The [first TODO application slice](jspi-probe/TODO-SLICE.md) now uses the shared
-model and schema with this VFS on a separate page. Its release build passes,
-and its automated browser create/read/reload and error-recovery checks passed
-twice. The manual demo-form checks and post-integration contract rerun passed.
-The TODO slice now adds shared-model item editing, completion changes, and
-deletion. The expanded two-reload checks passed twice, and the manual UI checks
-passed, completing this item-mutation step.
-The separate TODO slice now adds list selection and adding items to existing
-lists, with selection retained across page reloads in the same tab. The expanded
-browser checks passed twice; the manual selection, reload, list isolation, and
-empty-list addition checks passed. This extension is complete.
-List renaming and deletion, including cascade removal of items and creation
-after deleting the last list, are also complete. The three-reload browser sequence
-passed twice, and the manual UI checks passed.
-A database download extension now captures committed bytes under exclusive
-ownership and validates integrity without publication. Dedicated export checks
-and CRUD regressions each passed twice. Native SQLite verified the downloaded
-file's integrity and rows. A later live edit left
-the downloaded snapshot unchanged and persisted after reopening the demo.
-The database download step is complete.
+This remains a bounded experiment: whole-file buffering, 1 MiB maximum, MEMORY
+journal, and cooperative exclusive ownership. No production crash/power-loss
+claim, browser-data migration, or performance improvement is implied.
 
 ### Proposed architecture
 
@@ -91,28 +49,12 @@ sync requirements. Whether this approach improves performance remains unmeasured
 
 ### Incremental plan
 
-Each stage should produce a reviewable result before moving to the next. The
-documentation and standalone storage feasibility stages are complete. Stage 3
-has a verified [callback probe](jspi-probe/README.md#sqlite-callback-check), including
-two successful runs, and a [read-only OPFS
-probe](jspi-probe/README.md#read-only-opfs-check)
-verified in two successful runs. The next storage-only probe checks offset writes,
-truncation, visibility on close, and abort before implementing SQLite write
-callbacks; one successful run is recorded. A buffered writable VFS passed twice
-with a memory rollback journal; reopening in a fresh WASM instance after page
-reload passed twice in a separate check. Cross-tab exclusive ownership is
-verified in two successful runs. Writable failure recovery with locking enabled
-also passed twice. Automatic lock release when the owning tab closes is
-verified in two successful runs. Closing an owner during an uncommitted
-transaction before COMMIT or any VFS write also passed twice. Interruption with
-buffered VFS writes and staged publication now passed twice in the combined suite.
-Actual quota exhaustion and seven process-termination checks each passed twice.
-The bounded recovery decision is
-recorded; the VFS contract checks and writable/cross-tab regressions each passed
-twice, completing the contract audit. Stage 4 has a first unencrypted TODO slice
-with two successful browser-check runs and completion of demo-form
-checks and a contract rerun. Full SPA integration and stages 5–6 remain future work. The
-original storage probe's repeatability and other browsers remain unverified.
+The storage/VFS investigation, unencrypted application slices, and scoped
+encryption boundary checks are complete. Full SPA integration followed encryption
+validation. The application browser suite, manual UI checks, and post-integration
+regressions passed on 2026-09-22. SPA acceptance is complete. Broader browser
+coverage and the performance comparison are out of scope. Performance remains
+unmeasured; the final assessment and replacement/migration decision remain.
 
 1. **Document the direction (complete).** Separate the running IndexedDB
    baseline and historical findings from the proposed JSPI experiment.
@@ -129,7 +71,7 @@ original storage probe's repeatability and other browsers remain unverified.
    rejects unsupported concurrent access, including another tab. Do not assume
    WAL or multiple connections work. Verify transactions, rollback, and reopen
    persistence, and investigate interrupted writes before claiming durability.
-4. **Connect the TODO application.** Preserve the shared model and native CLI.
+4. **Connect the TODO application (complete within the experimental scope).** Preserve the shared model and native CLI.
    Audit every browser path that can perform storage I/O, including initialization,
    schema application, export, encryption inspection, and connection cleanup.
    Make the necessary entry points suspendable, update the SPA to await them,
@@ -142,9 +84,10 @@ original storage probe's repeatability and other browsers remain unverified.
    plaintext conversion and removing encryption are excluded. These boundary
    checks passed; application integration remains. Record compatibility findings
    separately from the old backend.
-6. **Evaluate and document the result.** Add browser regression coverage and
-   compare correctness, responsiveness, and measured performance with the baseline.
-   Record supported browsers, remaining limitations, and a decision on replacing
+6. **Assess and document the result.** Broader browser coverage and the performance
+   comparison are skipped. Retain the tested browser details
+   without inferring additional verified support or a performance advantage.
+   Record remaining limitations and a decision on replacing
    IndexedDB. Decide separately whether existing browser data needs migration;
    choosing the same database name does not move IndexedDB data into OPFS.
 
@@ -160,9 +103,10 @@ The recovery decision retains the bounded experimental whole-file design;
 production crash durability and an associated persistent recovery protocol
 remain outside that claim. Simulated failures and document teardown do not
 establish power-loss durability.
-The supported-VFS-contract audit is complete. Next come SPA integration,
-encryption checks,
-and browser/performance evaluation described above.
+The supported-VFS-contract audit and scoped encryption probe are complete.
+Integrated SPA acceptance is complete. Broader browser coverage and performance
+comparison are skipped. The final assessment and
+replacement/migration decision remain.
 
 wasm-bindgen's JSPI support is experimental. Use a JSPI-capable browser and HTTPS
 or localhost for OPFS; consult the linked guide's runtime table when selecting
@@ -171,15 +115,16 @@ cannot be combined with WASM threads/shared memory in this toolchain. Build
 post-processing must accept exception-handling instructions; the upstream OPFS
 example disables wasm-pack's release `wasm-opt` step.
 
-The standalone probe pins its own dependencies and disables release `wasm-opt`;
-the application's build remains unchanged. The probe reports a startup error
+The JSPI runtime pins its dependencies and disables release `wasm-opt`;
+the application's build now reuses its encryption feature package. The probe reports a startup error
 for unsupported environments; a fallback backend is not part of it. JSPI yields
 during storage waits, but CPU-bound SQLite work on the page can still affect UI
 responsiveness.
 
 ## Running the current experiment
 
-These commands run the existing IndexedDB implementation, not the planned JSPI VFS.
+The native CLI is unchanged. The default browser build now runs the encrypted
+JSPI/OPFS application; the IndexedDB baseline has a separate build target.
 
 ### Native
 
@@ -318,10 +263,11 @@ establish that OPFS itself is unsuitable or that the new approach will be faster
 
 ## Demo
 
-This is the existing IndexedDB/encryption demo and the acceptance baseline for
-the later JSPI integration. Its recorded outputs do not demonstrate JSPI support.
+This is the historical IndexedDB/encryption demo and comparison baseline.
+Its recorded outputs do not demonstrate JSPI support. The new application
+workflow and acceptance instructions are in [spa/README.md](spa/README.md).
 
-1. Run the demo with `make serve-spa` and then open a browser at `localhost:8080`.
+1. Run the historical demo with `make serve-spa-indexeddb` and open `http://127.0.0.1:8082`.
 1. The database is unencrypted and accessible; you can create a list and some items.
 1. Click the "Download Database" button for a local copy of the sqlite DB
 

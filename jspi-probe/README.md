@@ -7,7 +7,10 @@ The post-change TODO/export regressions passed.
 Encrypted databases will be created encrypted and remain
 encrypted permanently. Plaintext conversion and removing encryption are out of
 scope; changing a key remains supported. The validated encryption boundary is
-sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+now used by the integrated encrypted SPA. SPA acceptance and probe regressions
+passed on 2026-09-22; see [the application guide](../spa/README.md). Historical
+statements below
+about an unchanged IndexedDB SPA describe the earlier probe stages.
 
 This standalone experiment exercises Promise-based OPFS from synchronous Rust
 functions on the browser's main page. Additional checks exercise SQLite's `xOpen`

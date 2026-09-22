@@ -1,6 +1,8 @@
 //! First application slice: shared TODO schema/model on the audited VFS.
 use super::*;
 #[cfg(feature = "encryption")]
+mod application;
+#[cfg(feature = "encryption")]
 mod encryption;
 use std::{
     future::Future,
@@ -38,12 +40,45 @@ fn database<T>(
     hook: Function,
     work: impl FnOnce(&mut Connection) -> Result<T, JsValue>,
 ) -> Result<T, JsValue> {
-    database_inner(name, create, hook, false, None, work)
+    database_inner(name, create.into(), hook, false, None, work)
+}
+
+#[derive(Clone, Copy)]
+enum Creation {
+    Existing,
+    IfMissing,
+    #[cfg(feature = "encryption")]
+    New,
+}
+impl From<bool> for Creation {
+    fn from(create: bool) -> Self {
+        if create {
+            Self::IfMissing
+        } else {
+            Self::Existing
+        }
+    }
+}
+
+fn keyed_database<T>(
+    name: String,
+    hook: Function,
+    key: Option<&str>,
+    work: impl FnOnce(&mut Connection) -> Result<T, JsValue>,
+) -> Result<T, JsValue> {
+    #[cfg(not(feature = "encryption"))]
+    if key.is_some() {
+        return Err(js_error("This build does not support encryption"));
+    }
+    if key == Some("") {
+        return Err(js_error("Encryption key must not be empty"));
+    }
+    database_inner(name, Creation::Existing, hook, key.is_some(), key, work)
 }
 
 fn database_inner<T>(
     name: String,
-    create: bool,
+    creation: Creation,
     hook: Function,
     _cipher: bool,
     _key: Option<&str>,
@@ -54,7 +89,7 @@ fn database_inner<T>(
     let bytes = match super::super::read(&name) {
         Ok(bytes) => bytes,
         Err(error)
-            if create
+            if !matches!(creation, Creation::Existing)
                 && js_sys::Reflect::get(&error, &"name".into())?
                     .as_string()
                     .as_deref()
@@ -65,6 +100,12 @@ fn database_inner<T>(
         }
         Err(error) => return Err(error),
     };
+    #[cfg(feature = "encryption")]
+    if matches!(creation, Creation::New) && !bytes.is_empty() {
+        return Err(js_error(
+            "Database already exists; unlock it instead of creating it",
+        ));
+    }
     if bytes.len() > LIMIT {
         return Err(js_error("TODO slice limited to 1 MiB"));
     }
@@ -232,11 +273,12 @@ pub fn todo_update_item(
     description: String,
     completed: bool,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<JsValue, JsValue> {
     if description.trim().is_empty() {
         return Err(js_error("Item description is required"));
     }
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         let mut list = model(todo_list::TodoList::load(&tx, list_id.into()))?;
@@ -260,8 +302,9 @@ pub fn todo_delete_item(
     list_id: u32,
     item_id: u32,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<JsValue, JsValue> {
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         let mut list = model(todo_list::TodoList::load(&tx, list_id.into()))?;
@@ -280,8 +323,12 @@ pub fn todo_delete_item(
 
 /// Enumerate existing lists in stable ID order without publishing.
 #[wasm_bindgen(jspi)]
-pub fn todo_lists(name: String, before_publish: Function) -> Result<JsValue, JsValue> {
-    database(name, false, before_publish, |db| {
+pub fn todo_lists(
+    name: String,
+    before_publish: Function,
+    key: Option<String>,
+) -> Result<JsValue, JsValue> {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         schema(db, false)?;
         let mut lists = model(todo_list::TodoList::list_all(db))?;
         lists.sort_by_key(|(id, _)| *id);
@@ -302,8 +349,9 @@ pub fn todo_read_list(
     name: String,
     list_id: u32,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<JsValue, JsValue> {
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         schema(db, false)?;
         let list = model(todo_list::TodoList::load(db, list_id.into()))?;
         let integrity: String = db
@@ -323,11 +371,12 @@ pub fn todo_add_item(
     list_id: u32,
     description: String,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<JsValue, JsValue> {
     if description.trim().is_empty() {
         return Err(js_error("Item description is required"));
     }
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         let mut list = model(todo_list::TodoList::load(&tx, list_id.into()))?;
@@ -346,11 +395,12 @@ pub fn todo_rename_list(
     list_id: u32,
     title: String,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<JsValue, JsValue> {
     if title.trim().is_empty() {
         return Err(js_error("List title is required"));
     }
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         let mut list = model(todo_list::TodoList::load(&tx, list_id.into()))?;
@@ -369,8 +419,9 @@ pub fn todo_delete_list(
     name: String,
     list_id: u32,
     before_publish: Function,
+    key: Option<String>,
 ) -> Result<(), JsValue> {
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         // Reject missing IDs before executing a DELETE, including repeated requests.
@@ -395,9 +446,13 @@ pub fn todo_delete_list(
 /// Capture committed OPFS bytes while holding the same exclusive ownership as CRUD.
 /// No live connection or transaction is exposed by this application slice.
 #[wasm_bindgen(jspi)]
-pub fn todo_export(name: String, before_publish: Function) -> Result<Vec<u8>, JsValue> {
+pub fn todo_export(
+    name: String,
+    before_publish: Function,
+    key: Option<String>,
+) -> Result<Vec<u8>, JsValue> {
     let source = name.clone();
-    database(name, false, before_publish, |db| {
+    keyed_database(name, before_publish, key.as_deref(), |db| {
         schema(db, false)?;
         let integrity: String = db
             .query_row("PRAGMA integrity_check", [], |row| row.get(0))

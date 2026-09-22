@@ -7,7 +7,10 @@ The post-change TODO/export regressions passed.
 Encrypted databases will be created encrypted and remain
 encrypted permanently. Plaintext conversion and removing encryption are out of
 scope; changing a key remains supported. The validated encryption boundary is
-sufficient to proceed with SPA integration. The existing SPA still uses IndexedDB.
+now used by the integrated encrypted SPA. SPA acceptance and probe regressions
+passed on 2026-09-22; see [the application guide](../spa/README.md). Historical
+statements below
+about an unchanged IndexedDB SPA describe the earlier probe stages.
 
 Open [todo-slice.html](http://localhost:8081/todo-slice.html) on the same origin as
 your probe server (use `127.0.0.1` instead if that is your current origin).
@@ -19,7 +22,8 @@ existing IndexedDB SPA.
 The probe now depends directly on the repository's `todo-list` crate. It calls
 the existing `apply_schema`, `TodoList::new`, `add_item`, `list_all`, and `load`
 methods; it does not maintain copies of their SQL or model. The shared crate,
-native CLI, and existing `ffi`/SPA implementation are unchanged.
+native CLI and existing `ffi` implementation are unchanged. The default SPA
+now uses this backend with encryption; this page remains the unencrypted probe.
 
 `todo_create`, `todo_read`, `todo_lists`, `todo_read_list`, `todo_add_item`,
 `todo_update_item`, `todo_delete_item`, `todo_rename_list`, `todo_delete_list`,

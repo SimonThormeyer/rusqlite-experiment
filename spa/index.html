@@ -1,68 +1,60 @@
 <!doctype html>
 <html lang="en">
-
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>FFI Todo App</title>
-    <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Encrypted TODO</title>
+  <link rel="stylesheet" href="./style.css">
 </head>
-
 <body>
-    <div id="app">
-        <header>
-            <h1>Todo Lists</h1>
-            <div id="status">Initializing...</div>
-        </header>
-
-        <main>
-            <aside id="lists-pane">
-                <h2>Lists</h2>
-                <ul id="lists"></ul>
-                <div class="controls">
-                    <input id="new-list-title" placeholder="New list title" />
-                    <button id="create-list">Create List</button>
-                </div>
-                <div class="sidebar-actions">
-                    <button id="download-db" class="secondary">Download Database</button>
-                    <button id="check-encryption" class="secondary">Check Encryption</button>
-                    <button id="set-encryption" class="secondary">Set Encryption Key</button>
-                    <div id="encryption-status" class="info-display"></div>
-                </div>
-            </aside>
-
-            <section id="items-pane">
-                <h2 id="current-list-title">No list loaded</h2>
-                <div id="items-controls" class="hidden">
-                    <input id="new-item-desc" placeholder="New item description" />
-                    <button id="add-item">Add Item</button>
-                    <button id="save-list">Save List</button>
-                    <button id="delete-list" class="danger">Delete List</button>
-                </div>
-
-                <ul id="items"></ul>
-            </section>
-        </main>
-    </div>
-
-    <!-- Passphrase Modal -->
-    <div id="passphrase-modal" class="modal hidden">
-        <div class="modal-content">
-            <h3 id="modal-title">Enter Passphrase</h3>
-            <p id="modal-message"></p>
-            <form id="passphrase-form">
-                <input type="password" id="passphrase-input" placeholder="Passphrase" required autocomplete="off" />
-                <div class="modal-buttons">
-                    <button type="submit" id="modal-submit">Submit</button>
-                    <button type="button" id="modal-cancel" class="secondary">Cancel</button>
-                </div>
-            </form>
-            <div id="modal-error" class="modal-error hidden"></div>
+<div id="app">
+  <header><h1>Todo Lists</h1><p id="status" role="status" aria-live="polite">Initializing…</p></header>
+  <section id="access" class="card">
+    <h2 id="access-title">Open your database</h2>
+    <p id="access-message">Checking browser storage…</p>
+    <form id="access-form" hidden>
+      <label>Password <input id="password" type="password" autocomplete="current-password" required disabled></label>
+      <label id="confirmation-label" hidden>Confirm password <input id="confirmation" type="password" autocomplete="new-password" disabled></label>
+      <button id="open" disabled>Unlock</button>
+    </form>
+    <button id="retry" type="button" disabled>Check storage again</button>
+  </section>
+  <div id="workspace" hidden>
+    <div class="toolbar"><span>Encrypted · password kept only in this tab</span>
+      <button id="refresh" disabled>Reload saved data</button><button id="lock" disabled>Lock</button></div>
+    <main>
+      <aside id="lists-pane">
+        <h2>Lists</h2><ul id="lists"></ul>
+        <form id="create-list-form" class="controls">
+          <label>New list title <input id="new-list-title" required disabled></label>
+          <button id="create-list" disabled>Create list</button>
+        </form>
+        <div class="sidebar-actions">
+          <button id="download-db" class="secondary" disabled>Download encrypted database</button>
+          <button id="show-key-form" class="secondary" disabled>Change password</button>
+          <form id="key-form" hidden>
+            <label>New password <input id="new-password" type="password" autocomplete="new-password" required disabled></label>
+            <label>Confirm new password <input id="new-password-confirm" type="password" autocomplete="new-password" required disabled></label>
+            <button id="change-key" disabled>Change password</button>
+            <button id="cancel-key" type="button" disabled>Cancel</button>
+          </form>
         </div>
-    </div>
-
-    <script src="ffi.js"></script>
-    <script type="module" src="main.ts"></script>
+      </aside>
+      <section id="items-pane">
+        <h2 id="current-list-title">No lists yet</h2>
+        <div id="items-controls" hidden>
+          <form id="rename-form" class="controls"><label>List title <input id="list-title" required disabled></label><button id="rename-list" disabled>Rename list</button></form>
+          <button id="delete-list" class="danger" disabled>Delete list and its items</button>
+          <form id="add-item-form" class="controls"><label>New item <input id="new-item-desc" required disabled></label><button id="add-item" disabled>Add item</button></form>
+        </div>
+        <ul id="items"></ul>
+      </section>
+    </main>
+  </div>
+  <p class="small">This experimental app stores an encrypted database in this browser. Keep your password: there is no password recovery. Existing IndexedDB and probe-demo data are separate and are not imported.</p>
+  <p class="small">The database limit is 1 MiB. Saved changes are included in downloads; unsaved form edits are not.</p>
+  <p><a href="./checks.html">Run integration checks on disposable data</a></p>
+</div>
+<script type="module" src="./main.ts"></script>
 </body>
-
 </html>

@@ -21,12 +21,12 @@ impl Drop for CodecVfs {
     }
 }
 
-fn code(db: &Connection, rc: i32) -> Result<(), JsValue> {
+pub(super) fn code(db: &Connection, rc: i32) -> Result<(), JsValue> {
     if rc == ffi::SQLITE_OK {
         return Ok(());
     }
-    let message =
-        unsafe { std::ffi::CStr::from_ptr(sqlite_wasm_rs::sqlite3_errmsg(db.handle())) }.to_string_lossy();
+    let message = unsafe { std::ffi::CStr::from_ptr(sqlite_wasm_rs::sqlite3_errmsg(db.handle())) }
+        .to_string_lossy();
     let error = js_sys::Error::new(&message);
     js_sys::Reflect::set(&error, &"sqliteCode".into(), &rc.into())?;
     Err(error.into())
@@ -78,7 +78,7 @@ pub fn encryption_create(name: String, key: String, hook: Function) -> Result<Js
     if key.is_empty() {
         return Err(js_error("Encryption key required"));
     }
-    database_inner(name, true, hook, true, Some(&key), |db| {
+    database_inner(name, Creation::IfMissing, hook, true, Some(&key), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, true)?;
         let mut list = model(todo_list::TodoList::new(
@@ -98,7 +98,9 @@ pub fn encryption_read(
     hook: Function,
 ) -> Result<JsValue, JsValue> {
     check_name(&name)?;
-    database_inner(name, false, hook, true, key.as_deref(), |db| verify(db))
+    database_inner(name, Creation::Existing, hook, true, key.as_deref(), |db| {
+        verify(db)
+    })
 }
 
 #[wasm_bindgen(jspi)]
@@ -109,7 +111,7 @@ pub fn encryption_rekey(
     hook: Function,
 ) -> Result<JsValue, JsValue> {
     check_name(&name)?;
-    database_inner(name, false, hook, true, key.as_deref(), |db| {
+    database_inner(name, Creation::Existing, hook, true, key.as_deref(), |db| {
         verify(db)?;
         let length = i32::try_from(new_key.len()).map_err(|_| js_error("Key too long"))?;
         code(db, unsafe {
@@ -123,7 +125,7 @@ pub fn encryption_rekey(
 pub fn encryption_export(name: String, key: String, hook: Function) -> Result<Vec<u8>, JsValue> {
     check_name(&name)?;
     let source = name.clone();
-    database_inner(name, false, hook, true, Some(&key), |db| {
+    database_inner(name, Creation::Existing, hook, true, Some(&key), |db| {
         verify(db)?;
         super::super::super::read(&source)
     })
@@ -137,7 +139,7 @@ pub fn encryption_add(
     hook: Function,
 ) -> Result<JsValue, JsValue> {
     check_name(&name)?;
-    database_inner(name, false, hook, true, Some(&key), |db| {
+    database_inner(name, Creation::Existing, hook, true, Some(&key), |db| {
         let tx = db.transaction().map_err(sql)?;
         schema(&tx, false)?;
         let id = model(todo_list::TodoList::list_all(&tx))?

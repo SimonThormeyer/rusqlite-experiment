@@ -23,7 +23,7 @@ WORKSPACE_CARGO_FILES := Cargo.toml Cargo.lock
 RUST_RS_FILES := $(shell find $(CRATES) \
 	\( -type d -name rust_modules -o -type d -name node_modules \) -prune \
 	-o -type f -name '*.rs' -print 2>/dev/null | LC_ALL=C sort)
-RUST_SOURCES := $(WORKSPACE_CARGO_FILES) $(CRATE_MANIFESTS) $(RUST_RS_FILES)
+RUST_SOURCES := $(WORKSPACE_CARGO_FILES) $(CRATE_MANIFESTS) $(RUST_RS_FILES) todo-list/src/schema/schema.sql
 
 PKG_DIR := ffi/pkg/
 COMPILED_WASM := ffi_bg.wasm ffi.js 
@@ -33,33 +33,31 @@ FFI_D_TS := ffi/pkg/ffi.d.ts
 $(PKG_OUT) $(FFI_D_TS) &: $(RUST_SOURCES)
 	wasm-pack build ffi --target web
 
-SPA_SOURCES := spa/index.html spa/main.ts spa/style.css
-SPA_OUT := spa/out/index.html spa/out/ffi_bg.wasm
+# The default SPA uses the same pinned encryption build as the validated probe.
+# Always build: generated WASM/glue/snippets must come from the same invocation.
+.PHONY: spa spa-check serve-spa clean-spa spa-indexeddb serve-spa-indexeddb spa-zip
+spa: jspi-encryption ## build the encrypted JSPI/OPFS application
+	bun run spa/build.ts
 
-$(SPA_OUT) &: $(PKG_OUT) $(SPA_SOURCES)
-	rm -rf spa/out
-	cp $(PKG_OUT) spa
-	bun build spa/index.html --outdir spa/out --target browser
-	cp spa/ffi_bg.wasm spa/out/
+spa-check: spa ## typecheck the SPA and run adapter tests
+	tsc -p spa/tsconfig.json
+	bun test spa/backend.test.ts
 
-.PHONY: clean-spa
-clean-spa: ## clean up the spa
-	rm -rf spa/out
-	rm $(addprefix spa/,$(COMPILED_WASM))
+serve-spa: spa ## serve encrypted JSPI app on 127.0.0.1:8080
+	miniserve --interfaces 127.0.0.1 --port 8080 --index index.html spa/out
 
-spa: $(SPA_OUT) ## build the single-page app
+spa-indexeddb: $(PKG_OUT) $(FFI_D_TS) ## build the preserved IndexedDB baseline
+	bun run spa/build.ts --indexeddb
 
-.PHONY: serve-spa
-serve-spa: $(SPA_OUT) ## serve the single-page app locally
-	miniserve --index index.html spa/out
+serve-spa-indexeddb: spa-indexeddb ## serve IndexedDB baseline on 127.0.0.1:8082
+	miniserve --interfaces 127.0.0.1 --port 8082 --index index.html spa/out-indexeddb
 
-SPA_ZIP := spa.zip
-SPA_FILES := $(shell git ls-files spa) $(FFI_D_TS)
-$(SPA_ZIP): $(SPA_FILES)
-	zip -1uj $(SPA_ZIP) $(SPA_FILES)
+clean-spa: ## remove generated SPA output
+	rm -rf spa/out spa/out-indexeddb
 
-.PHONY: spa-zip
-spa-zip: $(SPA_ZIP) ## zip up the spa portion of the app with ffi.d.ts
+spa-zip: spa ## package the complete deployable encrypted SPA
+	rm -f spa.zip
+	cd spa/out && zip -r ../../spa.zip .
 
 .PHONY: jspi-probe serve-jspi-probe
 jspi-probe: ## build the standalone JSPI/OPFS probe

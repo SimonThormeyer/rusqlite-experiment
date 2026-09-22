@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>FFI Todo App</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div id="app">
+        <header>
+            <h1>Todo Lists</h1>
+            <div id="status">Initializing...</div>
+        </header>
+
+        <main>
+            <aside id="lists-pane">
+                <h2>Lists</h2>
+                <ul id="lists"></ul>
+                <div class="controls">
+                    <input id="new-list-title" placeholder="New list title" />
+                    <button id="create-list">Create List</button>
+                </div>
+                <div class="sidebar-actions">
+                    <button id="download-db" class="secondary">Download Database</button>
+                    <button id="check-encryption" class="secondary">Check Encryption</button>
+                    <button id="set-encryption" class="secondary">Set Encryption Key</button>
+                    <div id="encryption-status" class="info-display"></div>
+                </div>
+            </aside>
+
+            <section id="items-pane">
+                <h2 id="current-list-title">No list loaded</h2>
+                <div id="items-controls" class="hidden">
+                    <input id="new-item-desc" placeholder="New item description" />
+                    <button id="add-item">Add Item</button>
+                    <button id="save-list">Save List</button>
+                    <button id="delete-list" class="danger">Delete List</button>
+                </div>
+
+                <ul id="items"></ul>
+            </section>
+        </main>
+    </div>
+
+    <!-- Passphrase Modal -->
+    <div id="passphrase-modal" class="modal hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">Enter Passphrase</h3>
+            <p id="modal-message"></p>
+            <form id="passphrase-form">
+                <input type="password" id="passphrase-input" placeholder="Passphrase" required autocomplete="off" />
+                <div class="modal-buttons">
+                    <button type="submit" id="modal-submit">Submit</button>
+                    <button type="button" id="modal-cancel" class="secondary">Cancel</button>
+                </div>
+            </form>
+            <div id="modal-error" class="modal-error hidden"></div>
+        </div>
+    </div>
+
+    <script type="module" src="main.ts"></script>
+</body>
+
+</html>

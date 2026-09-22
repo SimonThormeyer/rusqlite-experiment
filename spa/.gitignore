@@ -1,3 +1,4 @@
 *.js
 *.wasm
 /out/
+/out-indexeddb/
